@@ -60,8 +60,10 @@ class FakeDriver:
 
 
 class FakeEntityNode:
-    def __init__(self, uuid: str) -> None:
+    def __init__(self, uuid: str, name: str | None = None, labels: list[str] | None = None) -> None:
         self.uuid = uuid
+        self.name = name if name is not None else uuid
+        self.labels = labels if labels is not None else ["Entity"]
 
 
 class FakeEpisodicNode:
@@ -78,11 +80,40 @@ class FakeEntityEdge:
     awaitable `save`.
     """
 
-    def __init__(self, uuid: str, fact: str, attributes: dict | None = None) -> None:
+    def __init__(
+        self,
+        uuid: str,
+        fact: str,
+        attributes: dict | None = None,
+        name: str = "RELATES_TO",
+        source_node_uuid: str = "",
+        target_node_uuid: str = "",
+    ) -> None:
         self.uuid = uuid
         self.fact = fact
         self.attributes = attributes or {}
+        self.name = name
+        self.source_node_uuid = source_node_uuid
+        self.target_node_uuid = target_node_uuid
         self.save = AsyncMock()
+
+
+class FakeSearchResults:
+    """Stands in for graphiti_core.search.search_config.SearchResults --
+    chat_service.retrieve only reads the edge/node lists and their parallel
+    reranker-score lists (see that module's docstring)."""
+
+    def __init__(
+        self,
+        nodes: list[FakeEntityNode] | None = None,
+        node_reranker_scores: list[float] | None = None,
+        edges: list[FakeEntityEdge] | None = None,
+        edge_reranker_scores: list[float] | None = None,
+    ) -> None:
+        self.nodes = nodes or []
+        self.node_reranker_scores = node_reranker_scores or [1.0] * len(self.nodes)
+        self.edges = edges or []
+        self.edge_reranker_scores = edge_reranker_scores or [1.0] * len(self.edges)
 
 
 class FakeAddEpisodeResult:
@@ -111,11 +142,13 @@ class FakeGraphiti:
     def __init__(self, should_connect: bool) -> None:
         self.driver = FakeDriver(should_connect)
         self._should_connect = should_connect
-        self.build_indices_and_constraints = AsyncMock(
-            side_effect=self._build_indices
-        )
+        self.build_indices_and_constraints = AsyncMock(side_effect=self._build_indices)
         self.close = AsyncMock()
         self.add_episode = AsyncMock(return_value=default_add_episode_result())
+        # chat_service.py's hybrid retrieval -- empty by default (no facts
+        # found), so a test that doesn't care about chat still gets a valid
+        # SearchResults-shaped object rather than a MagicMock.
+        self.search_ = AsyncMock(return_value=FakeSearchResults())
 
     async def _build_indices(self, delete_existing: bool = False) -> None:
         if not self._should_connect:
@@ -187,4 +220,15 @@ def mock_propose_ontology(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     )
     mock = AsyncMock(return_value=default_proposal)
     monkeypatch.setattr(llm_module, "propose_ontology", mock)
+    return mock
+
+
+@pytest.fixture
+def mock_generate_chat_answer(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Patches app.core.llm.generate_chat_answer so chat tests never call the
+    real Anthropic API. Returns the mock so a test can override
+    return_value/side_effect for its own scenario.
+    """
+    mock = AsyncMock(return_value="Alice knows Bob [1].")
+    monkeypatch.setattr(llm_module, "generate_chat_answer", mock)
     return mock

@@ -1,4 +1,5 @@
 import type {
+  ChatTurn,
   EntityType,
   ExtractionResult,
   GraphFilters,
@@ -124,4 +125,12 @@ export function getGraph(filters: GraphFilters): Promise<GraphQueryResult> {
 
 export function getGraphNode(uuid: string): Promise<NodeDetail> {
   return getJson<NodeDetail>(`/graph/nodes/${encodeURIComponent(uuid)}`)
+}
+
+export function getChatHistory(): Promise<ChatTurn[]> {
+  return getJson<ChatTurn[]>('/chat/history')
+}
+
+export function askChat(question: string): Promise<ChatTurn> {
+  return postJson<ChatTurn>('/chat', { question })
 }

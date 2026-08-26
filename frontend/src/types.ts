@@ -138,3 +138,23 @@ export type NodeDetail = {
   neighbors: NodeNeighbor[]
   provenance: Provenance[]
 }
+
+// Mirrors backend/app/api/routes/chat.py's *Read shapes (Phase 4: chat +
+// retrieval). Like ChatTurn on the backend, this is an append-only
+// transcript, not a threaded multi-conversation model.
+
+export type ChatCitation = {
+  index: number
+  edge_uuid: string
+  fact: string
+  confidence: number | null
+}
+
+export type ChatTurn = {
+  id: string
+  question: string
+  answer: string
+  citations: ChatCitation[]
+  retrieved_count: number
+  created_at: string
+}
