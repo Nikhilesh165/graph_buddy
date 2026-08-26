@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { bootstrapOntology, listSources, uploadSource } from '../api/client'
+import { bootstrapOntology, extractSource, getSource, listSources, uploadSource } from '../api/client'
 import type { OntologyVersion, SourceRead } from '../types'
 
 type Props = {
@@ -11,6 +11,7 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
   const [sources, setSources] = useState<SourceRead[]>([])
   const [uploading, setUploading] = useState(false)
   const [bootstrappingId, setBootstrappingId] = useState<string | null>(null)
+  const [extractingId, setExtractingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Avoids double-firing the auto-bootstrap if hasOntology hasn't re-rendered yet.
@@ -32,6 +33,28 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
       setError(err instanceof Error ? err.message : 'Ontology bootstrap failed')
     } finally {
       setBootstrappingId(null)
+    }
+  }
+
+  async function runExtract(sourceId: string) {
+    setExtractingId(sourceId)
+    setError(null)
+    try {
+      await extractSource(sourceId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Extraction failed')
+    } finally {
+      // Refresh either way -- on failure the backend still recorded
+      // graphiti_status="failed" + graphiti_error on the source row, and
+      // that's the source of truth for what's shown per-row, not the error
+      // banner above.
+      try {
+        const refreshed = await getSource(sourceId)
+        setSources((prev) => prev.map((s) => (s.id === sourceId ? refreshed : s)))
+      } catch {
+        // best-effort refresh; the error banner already covers the failure
+      }
+      setExtractingId(null)
     }
   }
 
@@ -88,15 +111,33 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
                 <span className="error-text">{source.parse_error}</span>
               )}
               {source.status === 'parsed' && (
-                <button
-                  type="button"
-                  disabled={bootstrappingId === source.id}
-                  onClick={() => void runBootstrap(source.id)}
-                >
-                  {bootstrappingId === source.id
-                    ? 'Bootstrapping…'
-                    : 'Propose ontology from this source'}
-                </button>
+                <div className="source-actions">
+                  <button
+                    type="button"
+                    disabled={bootstrappingId === source.id}
+                    onClick={() => void runBootstrap(source.id)}
+                  >
+                    {bootstrappingId === source.id
+                      ? 'Bootstrapping…'
+                      : 'Propose ontology from this source'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!hasOntology || extractingId === source.id}
+                    title={hasOntology ? undefined : 'Bootstrap or define an ontology first'}
+                    onClick={() => void runExtract(source.id)}
+                  >
+                    {extractingId === source.id ? 'Extracting…' : 'Extract into graph'}
+                  </button>
+                  <span className={`graphiti-status graphiti-status--${source.graphiti_status}`}>
+                    {source.graphiti_status === 'extracted'
+                      ? `extracted: ${source.node_count} nodes, ${source.edge_count} edges`
+                      : source.graphiti_status.replace('_', ' ')}
+                  </span>
+                  {source.graphiti_status === 'failed' && source.graphiti_error && (
+                    <span className="error-text">{source.graphiti_error}</span>
+                  )}
+                </div>
               )}
             </li>
           ))}

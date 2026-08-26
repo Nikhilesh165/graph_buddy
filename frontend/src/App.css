@@ -180,6 +180,26 @@
   color: #ca8a04;
 }
 
+.source-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.graphiti-status {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.graphiti-status--extracted {
+  color: #16a34a;
+}
+
+.graphiti-status--failed {
+  color: #dc2626;
+}
+
 /* Ontology Studio */
 
 .diff-summary {

@@ -1,6 +1,7 @@
 // Mirrors backend/app/models/{source,ontology}.py's *Read / value-type shapes.
 
 export type SourceStatus = 'uploaded' | 'parsed' | 'failed'
+export type GraphitiStatus = 'not_extracted' | 'extracting' | 'extracted' | 'failed'
 
 export type SourceRead = {
   id: string
@@ -13,6 +14,25 @@ export type SourceRead = {
   row_count: number | null
   text_preview: string | null
   created_at: string
+  graphiti_status: GraphitiStatus
+  graphiti_error: string | null
+  episode_count: number
+  node_count: number
+  edge_count: number
+  extracted_at: string | null
+}
+
+export type SampleFact = {
+  fact: string
+  confidence: number | null
+}
+
+export type ExtractionResult = {
+  source_id: string
+  episodes_added: number
+  nodes_touched: number
+  edges_touched: number
+  sample_facts: SampleFact[]
 }
 
 export type PropertyDef = {
