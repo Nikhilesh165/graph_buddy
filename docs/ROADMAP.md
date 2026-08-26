@@ -4,7 +4,7 @@ Each phase should end with something demoable, not just "code exists." Ordered b
 
 ## Phase 0 — Foundations
 - Repo scaffolding: `/backend` (FastAPI), `/frontend` (React+TS), `/docs`.
-- Stand up Graphiti locally; confirm current supported graph backend and pin one (see ARCHITECTURE.md §3.4).
+- Docker Compose for Neo4j (single local container); wire Graphiti to it (see ARCHITECTURE.md §3.4 for why Neo4j over FalkorDB/Kuzu/LadybugDB).
 - Health-check API + empty React shell wired to it.
 - **Demo:** backend boots, Graphiti connects, frontend loads a blank shell.
 

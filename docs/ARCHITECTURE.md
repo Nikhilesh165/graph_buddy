@@ -66,7 +66,17 @@ Mapping onto the requested memory model:
   2. Flags contradictions (two overlapping facts with conflicting property values) for the discovery feed.
   3. Applies retention policy — old episodic detail can be archived/summarized while the semantic layer keeps the distilled fact, per a user-configurable retention setting.
 
-**Action item for Phase 0:** confirm current Graphiti graph-backend support (Neo4j / FalkorDB / Kuzu / Neptune) against latest docs before locking the DB choice — this plan assumes an embedded backend (e.g. Kuzu) for the single-tenant MVP to avoid standing up a server, with a documented migration path to Neo4j if/when multi-tenant or scale needs it. Verify this against Graphiti's docs at build time since backend support has changed release to release.
+**Backend decision (confirmed):** **Neo4j**, run as a single local Docker container in the single-tenant MVP.
+
+This reverses the original plan of using an embedded backend to avoid running a server at all. That plan assumed Kuzu; as of this writing, Graphiti's Kuzu driver is **deprecated** (still ships, but emits a `DeprecationWarning`, and has open bugs — e.g. missing full-text-index setup, [getzep/graphiti#1258](https://github.com/getzep/graphiti/issues/1258)). Its intended successor, **LadybugDB** (MIT-licensed, API-compatible with Kuzu, embedded, no server), is not yet merged into `graphiti-core` — a working driver exists but is sitting on an open PR ([getzep/graphiti#1509](https://github.com/getzep/graphiti/issues/1509)) blocked on a prerequisite Kuzu fix. Revisit once that lands; it would remove the local Docker dependency entirely.
+
+Of the two backends actively supported by Graphiti today, Neo4j vs. FalkorDB (a Redis-module backend, also not embedded — both require a running server/container):
+- **Neo4j** is Graphiti's primary, best-tested backend — least likely to hit driver edge cases — and Neo4j Browser gives free ad-hoc graph inspection during Phases 1–2, before the Graph Explorer UI exists in Phase 3.
+- **FalkorDB** is lighter-weight and faster to cold-start locally, with a smaller community and less Graphiti-specific mileage.
+
+"Single-tenant to start" was never actually in tension with running one local Docker container — the thing worth avoiding was managed/cloud infra, not a container on localhost. Neo4j's tooling and maturity outweigh FalkorDB's lighter footprint for the MVP; FalkorDB stays the fallback if local resource usage becomes a real problem.
+
+**Migration note:** if this ever needs a lighter local story, re-evaluate LadybugDB once merged upstream, or FalkorDB. If it needs to scale beyond single-tenant (Phase 8), Neo4j has the most mature path (Aura, clustering, Enterprise).
 
 ### 3.5 Discovery cycle
 Runs after each conversation (and optionally on a schedule):
@@ -99,7 +109,7 @@ Graph Explorer and Retrieval Inspector should share the same graph-rendering com
 ## 5. Suggested stack
 
 - **Backend:** Python + FastAPI (Graphiti is Python-native, no cross-language boundary).
-- **Graph/memory:** Graphiti, backend TBD per §3.4.
+- **Graph/memory:** Graphiti on **Neo4j** (single local Docker container for the single-tenant MVP) — see §3.4 for why.
 - **LLM:** Claude Sonnet for extraction/ontology proposals/chat; a cheaper model for high-volume background discovery-cycle scanning if cost becomes a concern.
 - **File parsing:** per-type parsers (start simple: `pdfplumber`/`python-docx`/`pandas`; revisit if quality demands `unstructured.io`).
 - **Frontend:** React + TypeScript; graph rendering via `react-force-graph` or `Sigma.js` (large graphs) — reuse the same component for Ontology Studio's schema diagram (smaller, structured) and Graph Explorer (larger, force-directed).

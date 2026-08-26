@@ -8,4 +8,5 @@ This repo is at the planning stage. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTU
 
 - **First data source:** file upload (PDF/DOCX/CSV/TXT/MD) — no warehouse connectors yet.
 - **Memory engine:** [Graphiti](https://github.com/getzep/graphiti) (Zep's temporal knowledge graph library) rather than a bespoke memory layer.
+- **Graph backend:** Neo4j, run as a single local Docker container. (Kuzu — the embedded, zero-server option — is deprecated in Graphiti; its successor, LadybugDB, isn't merged upstream yet. See `docs/ARCHITECTURE.md` §3.4.)
 - **Tenancy:** single-tenant. No auth/org model in the MVP.
