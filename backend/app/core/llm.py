@@ -20,6 +20,10 @@ meaningfully model this content. Keep it focused (roughly 3-8 entity types, \
 2-6 relation types for a first pass). Every relation type's source_types and \
 target_types must reference entity type names you also propose.
 
+Naming: entity/relation type names should be short PascalCase-ish identifiers \
+with no spaces or punctuation (e.g. "Person", "WORKS_AT") -- they become graph \
+labels. Property `type` values must be one of: string, number, integer, boolean.
+
 Document sample:
 ---
 {sample}

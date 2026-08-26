@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     neo4j_password: str = "changeme"
 
     anthropic_api_key: str | None = None
-    anthropic_model: str | None = None  # None -> graphiti-core's own default
+    # graphiti-core's own default is claude-haiku-4-5-latest if left None --
+    # explicit per ARCHITECTURE.md §5 ("Claude Sonnet for extraction").
+    anthropic_model: str | None = "claude-sonnet-5"
 
     openai_api_key: str | None = None
 
@@ -40,6 +42,10 @@ class Settings(BaseSettings):
     max_upload_mb: int = 25
     anthropic_ontology_model: str = "claude-sonnet-5"
     ontology_bootstrap_sample_chars: int = 8000
+
+    # --- Phase 2: extraction ---
+    extraction_chunk_chars: int = 3000  # prose (paragraph-packed)
+    extraction_chunk_rows: int = 50  # CSV (header repeated per chunk)
 
 
 @lru_cache

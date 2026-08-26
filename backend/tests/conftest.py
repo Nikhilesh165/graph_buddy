@@ -51,6 +51,38 @@ class FakeDriver:
         self.client = FakeNeo4jClient(should_connect)
 
 
+class FakeEntityNode:
+    def __init__(self, uuid: str) -> None:
+        self.uuid = uuid
+
+
+class FakeEntityEdge:
+    """Stands in for graphiti_core.edges.EntityEdge -- just enough surface
+    for extraction_service.extract_source: a mutable `attributes` dict and an
+    awaitable `save`.
+    """
+
+    def __init__(self, uuid: str, fact: str, attributes: dict | None = None) -> None:
+        self.uuid = uuid
+        self.fact = fact
+        self.attributes = attributes or {}
+        self.save = AsyncMock()
+
+
+class FakeAddEpisodeResult:
+    def __init__(self, nodes: list[FakeEntityNode], edges: list[FakeEntityEdge]) -> None:
+        self.nodes = nodes
+        self.edges = edges
+
+
+def default_add_episode_result() -> FakeAddEpisodeResult:
+    edge = FakeEntityEdge(uuid="edge-1", fact="Alice knows Bob", attributes={"confidence": 0.9})
+    return FakeAddEpisodeResult(
+        nodes=[FakeEntityNode(uuid="node-alice"), FakeEntityNode(uuid="node-bob")],
+        edges=[edge],
+    )
+
+
 class FakeGraphiti:
     """Stands in for graphiti_core.Graphiti."""
 
@@ -61,6 +93,7 @@ class FakeGraphiti:
             side_effect=self._build_indices
         )
         self.close = AsyncMock()
+        self.add_episode = AsyncMock(return_value=default_add_episode_result())
 
     async def _build_indices(self, delete_existing: bool = False) -> None:
         if not self._should_connect:
@@ -102,6 +135,20 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     )
     with TestClient(create_app()) as c:
         yield c
+
+
+@pytest.fixture
+def client_with_extraction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[tuple[TestClient, FakeGraphiti]]:
+    """Like `client`, but also hands back the FakeGraphiti instance so a test
+    can configure/inspect `add_episode` (return_value, side_effect, call args)
+    for extraction endpoint tests.
+    """
+    fake_graphiti = FakeGraphiti(should_connect=True)
+    monkeypatch.setattr(graphiti_client_module, "build_graphiti", lambda settings: fake_graphiti)
+    with TestClient(create_app()) as c:
+        yield c, fake_graphiti
 
 
 @pytest.fixture

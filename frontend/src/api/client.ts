@@ -1,4 +1,10 @@
-import type { EntityType, OntologyVersion, RelationType, SourceRead } from '../types'
+import type {
+  EntityType,
+  ExtractionResult,
+  OntologyVersion,
+  RelationType,
+  SourceRead,
+} from '../types'
 
 const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -71,6 +77,11 @@ export function listSources(): Promise<SourceRead[]> {
 
 export function getSource(id: string): Promise<SourceRead> {
   return getJson<SourceRead>(`/sources/${id}`)
+}
+
+export async function extractSource(sourceId: string): Promise<ExtractionResult> {
+  const path = `/sources/${sourceId}/extract`
+  return unwrap<ExtractionResult>(await fetch(`${API_BASE_URL}${path}`, { method: 'POST' }), path)
 }
 
 export function getOntology(): Promise<OntologyVersion> {
