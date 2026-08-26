@@ -13,7 +13,7 @@ This repo is at the planning stage. See [`docs/VISION.md`](docs/VISION.md) for w
 
 ## Getting started
 
-Phase 0 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)) is scaffolded: a FastAPI backend wired to [Graphiti](https://github.com/getzep/graphiti), a Neo4j container, and a React+TS frontend that reports both statuses.
+Phase 0 and Phase 1 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)) are built: a FastAPI backend wired to [Graphiti](https://github.com/getzep/graphiti)/Neo4j, file upload + per-type parsing (PDF/DOCX/CSV/TXT/MD) into a local SQLite store, an LLM ontology-bootstrap pass, and a React+TS frontend (health status, Sources, Ontology Studio).
 
 ```sh
 cp .env.example .env        # fill in ANTHROPIC_API_KEY and OPENAI_API_KEY (embeddings)
@@ -26,6 +26,6 @@ cd frontend && npm install
 npm run dev                            # http://localhost:5173
 ```
 
-The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `GET /health/graph`. The backend boots even without Neo4j or API keys configured — `/health/graph` reports the specific error instead of the app crashing.
+The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `GET /health/graph`. The backend boots even without Neo4j or API keys configured — `/health/graph` reports the specific error instead of the app crashing, and uploading a source + bootstrapping an ontology work independently of Graphiti/Neo4j entirely (see `docs/ARCHITECTURE.md` §3.1–3.2 — extraction into the graph is Phase 2).
 
-Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API keys required — Graphiti is mocked).
+Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API keys required — Graphiti and the ontology-bootstrap LLM call are both mocked).

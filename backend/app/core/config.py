@@ -12,8 +12,9 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# backend/app/core/config.py -> repo root is three parents up.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# backend/app/core/config.py -> repo root is three parents up, backend/ is two.
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = _BACKEND_ROOT.parent
 _ENV_FILE = _REPO_ROOT / ".env"
 
 
@@ -32,6 +33,13 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
 
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    # --- Phase 1: sources + ontology ---
+    sqlite_path: Path = _BACKEND_ROOT / "data" / "graph_buddy.db"
+    uploads_dir: Path = _BACKEND_ROOT / "data" / "uploads"
+    max_upload_mb: int = 25
+    anthropic_ontology_model: str = "claude-sonnet-5"
+    ontology_bootstrap_sample_chars: int = 8000
 
 
 @lru_cache
