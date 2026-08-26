@@ -49,10 +49,26 @@ class FakeNeo4jClient:
 class FakeDriver:
     def __init__(self, should_connect: bool) -> None:
         self.client = FakeNeo4jClient(should_connect)
+        # graph_service.py talks to Neo4j via `graphiti.driver.execute_query`
+        # directly (see that module's docstring) rather than through
+        # graphiti_core's node/edge classes -- tests for it configure
+        # `execute_query.side_effect`/`return_value` to hand back
+        # `(records, summary, keys)` tuples, same shape as the real neo4j
+        # driver's `EagerResult`. Plain dicts stand in for `neo4j.Record`
+        # (`dict(record)` works on either).
+        self.execute_query = AsyncMock(return_value=([], None, None))
 
 
 class FakeEntityNode:
     def __init__(self, uuid: str) -> None:
+        self.uuid = uuid
+
+
+class FakeEpisodicNode:
+    """Stands in for graphiti_core.nodes.EpisodicNode -- extraction_service
+    only reads `.uuid` off of it (see AddEpisodeResults.episode)."""
+
+    def __init__(self, uuid: str = "fake-episode") -> None:
         self.uuid = uuid
 
 
@@ -70,9 +86,15 @@ class FakeEntityEdge:
 
 
 class FakeAddEpisodeResult:
-    def __init__(self, nodes: list[FakeEntityNode], edges: list[FakeEntityEdge]) -> None:
+    def __init__(
+        self,
+        nodes: list[FakeEntityNode],
+        edges: list[FakeEntityEdge],
+        episode: FakeEpisodicNode | None = None,
+    ) -> None:
         self.nodes = nodes
         self.edges = edges
+        self.episode = episode or FakeEpisodicNode()
 
 
 def default_add_episode_result() -> FakeAddEpisodeResult:

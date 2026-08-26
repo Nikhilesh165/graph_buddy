@@ -1,6 +1,9 @@
 import type {
   EntityType,
   ExtractionResult,
+  GraphFilters,
+  GraphQueryResult,
+  NodeDetail,
   OntologyVersion,
   RelationType,
   SourceRead,
@@ -104,4 +107,21 @@ export function updateOntology(
     entity_types: entityTypes,
     relation_types: relationTypes,
   })
+}
+
+export function getGraph(filters: GraphFilters): Promise<GraphQueryResult> {
+  const params = new URLSearchParams()
+  for (const type of filters.entityTypes ?? []) params.append('entity_types', type)
+  for (const type of filters.relationTypes ?? []) params.append('relation_types', type)
+  if (filters.minConfidence !== undefined) {
+    params.set('min_confidence', String(filters.minConfidence))
+  }
+  if (filters.search) params.set('search', filters.search)
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit))
+  const query = params.toString()
+  return getJson<GraphQueryResult>(`/graph${query ? `?${query}` : ''}`)
+}
+
+export function getGraphNode(uuid: string): Promise<NodeDetail> {
+  return getJson<NodeDetail>(`/graph/nodes/${encodeURIComponent(uuid)}`)
 }

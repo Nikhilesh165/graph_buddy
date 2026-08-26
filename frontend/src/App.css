@@ -1,5 +1,9 @@
 #shell {
-  max-width: 760px;
+  /* Wider than a text column would want, so the Graph Explorer's canvas +
+     side legend have room -- the narrower panels above it (Sources,
+     Ontology Studio) stay comfortably readable at this width too since
+     they're already text-align:left blocks, not centered prose. */
+  max-width: 1100px;
   margin: 0 auto;
   padding: 48px 20px 96px;
   text-align: center;
@@ -283,4 +287,222 @@ button {
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Graph Explorer */
+
+.graph-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.graph-filter-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.45;
+}
+
+.type-chip--active {
+  opacity: 1;
+}
+
+.type-chip-dot,
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.graph-filter-confidence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+input[type='search'] {
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  min-width: 200px;
+}
+
+.graph-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.graph-canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.graph-legend {
+  width: 160px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.graph-legend h3 {
+  font-family: var(--sans);
+  font-weight: 500;
+  color: var(--text-h);
+  font-size: 13px;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.legend-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confidence-ramp {
+  height: 8px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.confidence-ramp-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+/* Node detail panel */
+
+.node-detail {
+  margin-top: 20px;
+}
+
+.node-detail-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: left;
+}
+
+.node-detail-panel h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.node-detail-panel h4 {
+  font-family: var(--sans);
+  font-weight: 500;
+  color: var(--text-h);
+  font-size: 14px;
+  margin: 20px 0 8px;
+}
+
+.attribute-list {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attribute-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.attribute-row dt {
+  color: var(--text);
+  min-width: 100px;
+}
+
+.attribute-row dd {
+  margin: 0;
+  color: var(--text-h);
+}
+
+.neighbor-list,
+.provenance-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.neighbor-list li {
+  font-size: 13px;
+}
+
+.neighbor-direction {
+  color: var(--text);
+}
+
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text-h);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.confidence-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  margin-left: 6px;
+}
+
+.provenance-list li {
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+
+.provenance-source {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-h);
+}
+
+.provenance-list blockquote {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text);
+  font-style: italic;
 }

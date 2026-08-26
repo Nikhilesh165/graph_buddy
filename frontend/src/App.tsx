@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getGraphHealth, getHealth, getOntology } from './api/client'
+import { GraphExplorer } from './components/GraphExplorer'
 import { OntologyStudio } from './components/OntologyStudio'
 import { SourcesPanel } from './components/SourcesPanel'
 import type { OntologyVersion } from './types'
@@ -44,7 +45,7 @@ function App() {
   return (
     <main id="shell">
       <h1>Graph Buddy</h1>
-      <p className="subtitle">Phase 1 — ingestion + ontology bootstrap</p>
+      <p className="subtitle">Phase 3 — graph visualization</p>
 
       <section className="badges">
         <StatusBadge label="Backend" state={backendState} />
@@ -63,6 +64,8 @@ function App() {
       {ontology && (
         <OntologyStudio key={ontology.id} ontology={ontology} onSaved={setOntology} />
       )}
+
+      {ontology && ontology.version_number > 0 && <GraphExplorer ontology={ontology} />}
     </main>
   )
 }

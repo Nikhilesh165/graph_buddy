@@ -77,3 +77,64 @@ export type OntologyVersion = {
   diff: OntologyDiff | null
   created_at: string
 }
+
+// Mirrors backend/app/api/routes/graph.py's *Read shapes (Phase 3: Graph
+// Explorer). Unlike Source/OntologyVersion these aren't persisted rows --
+// they're read live off Neo4j via app/services/graph_service.py on every
+// request.
+
+export type GraphNode = {
+  uuid: string
+  name: string
+  type: string
+  labels: string[]
+  summary: string
+  attributes: Record<string, unknown>
+}
+
+export type GraphEdge = {
+  uuid: string
+  source: string
+  target: string
+  name: string
+  fact: string
+  confidence: number | null
+  valid_at: string | null
+  invalid_at: string | null
+  created_at: string | null
+}
+
+export type GraphQueryResult = {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  truncated: boolean
+}
+
+export type GraphFilters = {
+  entityTypes?: string[]
+  relationTypes?: string[]
+  minConfidence?: number
+  search?: string
+  limit?: number
+}
+
+export type Provenance = {
+  episode_uuid: string
+  source_description: string
+  valid_at: string | null
+  source_id: string | null
+  source_filename: string | null
+  chunk_preview: string | null
+}
+
+export type NodeNeighbor = {
+  edge: GraphEdge
+  direction: 'outgoing' | 'incoming'
+  node: GraphNode
+}
+
+export type NodeDetail = {
+  node: GraphNode
+  neighbors: NodeNeighbor[]
+  provenance: Provenance[]
+}
