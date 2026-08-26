@@ -13,10 +13,10 @@ This repo is at the planning stage. See [`docs/VISION.md`](docs/VISION.md) for w
 
 ## Getting started
 
-Phases 0-2 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)) are built: a FastAPI backend wired to [Graphiti](https://github.com/getzep/graphiti)/Neo4j, file upload + per-type parsing (PDF/DOCX/CSV/TXT/MD) into a local SQLite store, an LLM ontology-bootstrap pass, ontology-guided extraction into Graphiti episodes (chunked, with a confidence score on every edge), and a React+TS frontend (health status, Sources, Ontology Studio).
+Phases 0-5 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)) are built: a FastAPI backend wired to [Graphiti](https://github.com/getzep/graphiti)/Neo4j, file upload + per-type parsing (PDF/DOCX/CSV/TXT/MD) into a local SQLite store, an LLM ontology-bootstrap pass, ontology-guided extraction into Graphiti episodes (chunked, with a confidence score on every edge), and a React+TS frontend covering health status, Sources, Ontology Studio, the Graph Explorer, Chat, and the Retrieval Inspector.
 
 ```sh
-cp .env.example .env        # fill in ANTHROPIC_API_KEY and OPENAI_API_KEY (embeddings)
+cp .env.example .env        # fill in OPENAI_API_KEY (inference + embeddings, see ARCHITECTURE.md §5)
 docker compose up -d        # starts Neo4j
 
 cd backend && uv sync
@@ -26,6 +26,6 @@ cd frontend && npm install
 npm run dev                            # http://localhost:5173
 ```
 
-The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `GET /health/graph`. The backend boots even without Neo4j or API keys configured — `/health/graph` reports the specific error instead of the app crashing, and uploading a source + bootstrapping an ontology work independently of Graphiti/Neo4j entirely (see `docs/ARCHITECTURE.md` §3.1–3.2). Extraction (`POST /sources/{id}/extract`, or the "Extract into graph" button per source) does need a reachable Neo4j and both API keys — it returns a clean 503 rather than crashing when the graph DB isn't up.
+The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `GET /health/graph`. The backend boots even without Neo4j or an API key configured — `/health/graph` reports the specific error instead of the app crashing, and uploading a source + bootstrapping an ontology work independently of Graphiti/Neo4j entirely (see `docs/ARCHITECTURE.md` §3.1–3.2). Extraction and chat do need a reachable Neo4j and `OPENAI_API_KEY` — they return a clean 503/502 rather than crashing when those aren't available.
 
-Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API keys required — Graphiti and every LLM call are mocked).
+Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API key required — Graphiti and every LLM call are mocked).

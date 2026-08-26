@@ -1,6 +1,6 @@
 """Shared test fixtures.
 
-None of these tests talk to a real Neo4j, Anthropic, or OpenAI -- `build_graphiti`
+None of these tests talk to a real Neo4j or OpenAI -- `build_graphiti`
 is monkeypatched to return a lightweight fake with the same shape our code
 relies on (`driver.client.verify_connectivity`, `build_indices_and_constraints`,
 `close`), and `app.core.llm.propose_ontology` is mocked for anything that
@@ -209,7 +209,7 @@ def client_with_extraction(
 @pytest.fixture
 def mock_propose_ontology(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """Patches app.core.llm.propose_ontology so ontology bootstrap never calls
-    the real Anthropic API. Returns the mock so a test can override
+    the real OpenAI API. Returns the mock so a test can override
     return_value/side_effect for its own scenario.
     """
     default_proposal = OntologyProposal(
@@ -226,7 +226,7 @@ def mock_propose_ontology(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 @pytest.fixture
 def mock_generate_chat_answer(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """Patches app.core.llm.generate_chat_answer so chat tests never call the
-    real Anthropic API. Returns the mock so a test can override
+    real OpenAI API. Returns the mock so a test can override
     return_value/side_effect for its own scenario.
     """
     mock = AsyncMock(return_value="Alice knows Bob [1].")

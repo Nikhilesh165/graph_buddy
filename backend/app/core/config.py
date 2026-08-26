@@ -10,6 +10,9 @@ it's invoked from the repo root or from /backend.
 from functools import lru_cache
 from pathlib import Path
 
+from graphiti_core.llm_client.openai_base_client import (
+    DEFAULT_MODEL as GRAPHITI_DEFAULT_OPENAI_MODEL,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/core/config.py -> repo root is three parents up, backend/ is two.
@@ -27,12 +30,12 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "changeme"
 
-    anthropic_api_key: str | None = None
-    # graphiti-core's own default is claude-haiku-4-5-latest if left None --
-    # explicit per ARCHITECTURE.md §5 ("Claude Sonnet for extraction").
-    anthropic_model: str | None = "claude-sonnet-5"
-
+    # OpenAI serves both inference (extraction, ontology proposals, chat) and
+    # embeddings -- see ARCHITECTURE.md §5. Model defaults are pulled from
+    # graphiti-core's own maintained constant rather than hardcoded here, so
+    # they stay current with whatever the installed library version ships.
     openai_api_key: str | None = None
+    openai_model: str = GRAPHITI_DEFAULT_OPENAI_MODEL
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
@@ -40,7 +43,7 @@ class Settings(BaseSettings):
     sqlite_path: Path = _BACKEND_ROOT / "data" / "graph_buddy.db"
     uploads_dir: Path = _BACKEND_ROOT / "data" / "uploads"
     max_upload_mb: int = 25
-    anthropic_ontology_model: str = "claude-sonnet-5"
+    openai_ontology_model: str = GRAPHITI_DEFAULT_OPENAI_MODEL
     ontology_bootstrap_sample_chars: int = 8000
 
     # --- Phase 2: extraction ---
