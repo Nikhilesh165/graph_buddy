@@ -1,0 +1,21 @@
+# Environment
+.env
+.env.local
+
+# Python (backend)
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node (frontend)
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/

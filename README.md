@@ -10,3 +10,22 @@ This repo is at the planning stage. See [`docs/VISION.md`](docs/VISION.md) for w
 - **Memory engine:** [Graphiti](https://github.com/getzep/graphiti) (Zep's temporal knowledge graph library) rather than a bespoke memory layer.
 - **Graph backend:** Neo4j, run as a single local Docker container. (Kuzu — the embedded, zero-server option — is deprecated in Graphiti; its successor, LadybugDB, isn't merged upstream yet. See `docs/ARCHITECTURE.md` §3.4.)
 - **Tenancy:** single-tenant. No auth/org model in the MVP.
+
+## Getting started
+
+Phase 0 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)) is scaffolded: a FastAPI backend wired to [Graphiti](https://github.com/getzep/graphiti), a Neo4j container, and a React+TS frontend that reports both statuses.
+
+```sh
+cp .env.example .env        # fill in ANTHROPIC_API_KEY and OPENAI_API_KEY (embeddings)
+docker compose up -d        # starts Neo4j
+
+cd backend && uv sync
+uv run uvicorn app.main:app --reload   # http://localhost:8000
+
+cd frontend && npm install
+npm run dev                            # http://localhost:5173
+```
+
+The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `GET /health/graph`. The backend boots even without Neo4j or API keys configured — `/health/graph` reports the specific error instead of the app crashing.
+
+Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API keys required — Graphiti is mocked).

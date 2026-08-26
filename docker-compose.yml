@@ -1,0 +1,21 @@
+# Phase 0 scope (docs/ROADMAP.md): Neo4j only. Backend and frontend run
+# locally (uv run / npm run dev) rather than in containers for now.
+services:
+  neo4j:
+    image: neo4j:5.26-community
+    ports:
+      - "7474:7474" # Neo4j Browser
+      - "7687:7687" # Bolt (Graphiti/backend connects here)
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-changeme}
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -O /dev/null -q http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  neo4j_data:
