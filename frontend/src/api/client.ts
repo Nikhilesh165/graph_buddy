@@ -7,6 +7,7 @@ import type {
   NodeDetail,
   OntologyVersion,
   RelationType,
+  RetrievalTrace,
   SourceRead,
 } from '../types'
 
@@ -133,4 +134,8 @@ export function getChatHistory(): Promise<ChatTurn[]> {
 
 export function askChat(question: string): Promise<ChatTurn> {
   return postJson<ChatTurn>('/chat', { question })
+}
+
+export function getRetrievalTrace(turnId: string): Promise<RetrievalTrace> {
+  return getJson<RetrievalTrace>(`/chat/${encodeURIComponent(turnId)}/trace`)
 }

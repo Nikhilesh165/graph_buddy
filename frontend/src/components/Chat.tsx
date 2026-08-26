@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { askChat, getChatHistory } from '../api/client'
 import type { ChatTurn } from '../types'
-
-function formatConfidence(value: number | null): string {
-  return value === null ? 'unscored' : value.toFixed(2)
-}
+import { formatConfidence } from '../lib/confidence'
 
 function TurnCitations({ citations }: { citations: ChatTurn['citations'] }) {
   if (citations.length === 0) return null
@@ -20,7 +17,11 @@ function TurnCitations({ citations }: { citations: ChatTurn['citations'] }) {
   )
 }
 
-export function Chat() {
+type Props = {
+  onExplain: (turnId: string) => void
+}
+
+export function Chat({ onExplain }: Props) {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
@@ -72,6 +73,15 @@ export function Chat() {
               <div className="chat-answer">
                 {turn.answer}
                 <TurnCitations citations={turn.citations} />
+                {turn.retrieved_count > 0 && (
+                  <button
+                    type="button"
+                    className="link-button explain-button"
+                    onClick={() => onExplain(turn.id)}
+                  >
+                    Explain this answer
+                  </button>
+                )}
               </div>
             </div>
           ))}

@@ -73,7 +73,13 @@ number, e.g. [1] or [2][3]. If the facts don't contain enough information to ans
 the question, say so plainly instead of guessing."""
 
 
-def _format_facts(facts: list[tuple[str, float | None]]) -> str:
+def format_facts(facts: list[tuple[str, float | None]]) -> str:
+    """The exact numbered-facts block handed to the LLM as context -- public
+    (not `_`-prefixed) because app/services/chat_service.py also calls this
+    to capture the same string verbatim as the retrieval trace's
+    `final_context` (docs/ARCHITECTURE.md §3.6), rather than reconstructing
+    it separately and risking the two drifting apart.
+    """
     lines = []
     for i, (fact, confidence) in enumerate(facts, start=1):
         conf_str = f"{confidence:.2f}" if confidence is not None else "unscored"
@@ -84,7 +90,7 @@ def _format_facts(facts: list[tuple[str, float | None]]) -> str:
 async def generate_chat_answer(
     *,
     question: str,
-    facts: list[tuple[str, float | None]],
+    facts_context: str,
     api_key: str | None,
     model: str,
 ) -> str:
@@ -96,7 +102,7 @@ async def generate_chat_answer(
         messages=[
             {
                 "role": "user",
-                "content": f"Facts:\n{_format_facts(facts)}\n\nQuestion: {question}",
+                "content": f"Facts:\n{facts_context}\n\nQuestion: {question}",
             }
         ],
     )

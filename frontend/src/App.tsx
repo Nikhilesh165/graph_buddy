@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getGraphHealth, getHealth, getOntology } from './api/client'
 import { Chat } from './components/Chat'
 import { GraphExplorer } from './components/GraphExplorer'
 import { OntologyStudio } from './components/OntologyStudio'
+import { RetrievalInspector } from './components/RetrievalInspector'
 import { SourcesPanel } from './components/SourcesPanel'
 import type { OntologyVersion } from './types'
 import './App.css'
@@ -25,6 +26,11 @@ function App() {
   const [graphState, setGraphState] = useState<BadgeState>('checking')
   const [graphDetail, setGraphDetail] = useState<string | undefined>(undefined)
   const [ontology, setOntology] = useState<OntologyVersion | null>(null)
+  const [inspectingTurnId, setInspectingTurnId] = useState<string | null>(null)
+  const entityTypeOrder = useMemo(
+    () => ontology?.entity_types.map((et) => et.name) ?? [],
+    [ontology],
+  )
 
   useEffect(() => {
     getHealth()
@@ -46,7 +52,7 @@ function App() {
   return (
     <main id="shell">
       <h1>Graph Buddy</h1>
-      <p className="subtitle">Phase 4 — chat + retrieval</p>
+      <p className="subtitle">Phase 5 — retrieval analysis</p>
 
       <section className="badges">
         <StatusBadge label="Backend" state={backendState} />
@@ -68,7 +74,16 @@ function App() {
 
       {ontology && ontology.version_number > 0 && <GraphExplorer ontology={ontology} />}
 
-      {ontology && ontology.version_number > 0 && <Chat />}
+      {ontology && ontology.version_number > 0 && <Chat onExplain={setInspectingTurnId} />}
+
+      {inspectingTurnId && (
+        <RetrievalInspector
+          key={inspectingTurnId}
+          turnId={inspectingTurnId}
+          entityTypeOrder={entityTypeOrder}
+          onClose={() => setInspectingTurnId(null)}
+        />
+      )}
     </main>
   )
 }

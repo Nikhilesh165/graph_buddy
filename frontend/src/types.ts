@@ -158,3 +158,33 @@ export type ChatTurn = {
   retrieved_count: number
   created_at: string
 }
+
+// Mirrors the retrieval-trace shapes in backend/app/api/routes/chat.py
+// (Phase 5: Retrieval Inspector) -- one persisted trace per chat turn.
+
+export type SeedNode = {
+  uuid: string
+  name: string
+  type: string
+  score: number
+  is_seed: boolean
+}
+
+export type TracedFact = {
+  edge_uuid: string
+  name: string
+  fact: string
+  confidence: number | null
+  score: number
+  source_node_uuid: string
+  target_node_uuid: string
+}
+
+export type RetrievalTrace = {
+  turn_id: string
+  query: string
+  seed_nodes: SeedNode[]
+  facts: TracedFact[]
+  final_context: string
+  created_at: string
+}

@@ -84,4 +84,38 @@ async def test_ask_builds_citations_aligned_with_facts(monkeypatch: pytest.Monke
 
     fake_llm.assert_awaited_once()
     _, kwargs = fake_llm.call_args
-    assert kwargs["facts"] == [("Alice knows Bob", 0.9), ("Bob works at Acme", None)]
+    assert kwargs["facts_context"] == (
+        "[1] (confidence 0.90) Alice knows Bob\n[2] (confidence unscored) Bob works at Acme"
+    )
+    # The trace's final_context must be the exact string handed to the LLM,
+    # not a separately-reconstructed copy that could drift from it.
+    assert result.trace.final_context == kwargs["facts_context"]
+
+
+async def test_retrieve_backfills_fact_endpoint_nodes_not_in_seed_results() -> None:
+    fake_graphiti = FakeGraphiti(should_connect=True)
+    fake_graphiti.search_.return_value = FakeSearchResults(
+        nodes=[FakeEntityNode(uuid="n1", name="Alice", labels=["Entity", "Person"])],
+        edges=[
+            FakeEntityEdge(
+                uuid="e1",
+                fact="Alice knows Bob",
+                source_node_uuid="n1",
+                target_node_uuid="n2",
+            )
+        ],
+    )
+    fake_graphiti.driver.execute_query.return_value = (
+        [{"uuid": "n2", "name": "Bob", "labels": ["Entity", "Person"]}],
+        None,
+        None,
+    )
+
+    trace = await chat_service.retrieve(fake_graphiti, "who does Alice know?")
+
+    assert {n.uuid for n in trace.seed_nodes} == {"n1", "n2"}
+    bob = next(n for n in trace.seed_nodes if n.uuid == "n2")
+    assert bob.name == "Bob"
+    assert bob.is_seed is False
+    alice = next(n for n in trace.seed_nodes if n.uuid == "n1")
+    assert alice.is_seed is True
