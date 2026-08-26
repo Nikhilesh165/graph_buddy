@@ -33,6 +33,8 @@ Sources ──▶ Ingestion ──▶ Extraction ──▶ Graph Store (Graphiti
                                   Chat · Retrieval Inspector · Discovery Feed
 ```
 
+Two things run through every layer rather than living in one box: **confidence** (every fact carries a corroboration-based score, set at extraction and revised at consolidation, surfaced everywhere from the graph to the retrieval trace — see §3.7) and the **change digest** (consolidation doesn't just update the graph silently — it writes a plain-language summary of what changed into the Discovery Feed — see §3.4).
+
 ## 3. Layer by layer
 
 ### 3.1 Ingestion
@@ -48,9 +50,10 @@ Sources ──▶ Ingestion ──▶ Extraction ──▶ Graph Store (Graphiti
 - This registry is the contract that both extraction and retrieval read from — it's what keeps entity extraction from being pure free-text NER.
 
 ### 3.3 Extraction
-- Ontology-guided: given a chunk + current ontology, LLM extracts `(entity, type, properties)` and `(source, relation, target)` triples with confidence scores, plus provenance pointers back to the source span.
+- Ontology-guided: given a chunk + current ontology, LLM extracts `(entity, type, properties)` and `(source, relation, target)` triples with an initial confidence score, plus provenance pointers back to the source span.
 - Entity resolution / deduplication happens here — matching new mentions against existing graph nodes (name + type + embedding similarity), which is one of the things Graphiti already implements.
 - Extraction results are written as Graphiti episodes, not directly as "facts" — see Memory below for why that distinction matters.
+- The confidence score set here is a starting point, not the final word — see §3.7.
 
 ### 3.4 Graph store & memory (Graphiti)
 Graphiti is a temporal knowledge graph library built for exactly this shape of problem (originally built for AI agent memory), and it gives us for free:
@@ -63,8 +66,10 @@ Mapping onto the requested memory model:
 - **Semantic memory** = the resolved entity/relation graph Graphiti maintains from those episodes — the "current understanding."
 - **Periodic memory (consolidation)** = a scheduled job (nightly, or every N new episodes) that:
   1. Runs community detection (Leiden) over the graph and writes/updates community-summary nodes (GraphRAG-style), so broad questions don't require expanding thousands of edges.
-  2. Flags contradictions (two overlapping facts with conflicting property values) for the discovery feed.
-  3. Applies retention policy — old episodic detail can be archived/summarized while the semantic layer keeps the distilled fact, per a user-configurable retention setting.
+  2. Recomputes confidence scores (§3.7) — corroboration from new episodes raises a fact's confidence, contradictions and staleness lower it.
+  3. Flags contradictions (two overlapping facts with conflicting property values) for the discovery feed.
+  4. Applies retention policy — old episodic detail can be archived/summarized while the semantic layer keeps the distilled fact, per a user-configurable retention setting.
+  5. Writes a **change digest** for the cycle — a plain-language summary ("N new facts about X, 1 contradiction flagged, confidence raised on Y") — into the Discovery Feed. Consolidation is otherwise invisible batch work; the digest is what makes it a feature instead of a background job nobody ever opens.
 
 **Backend decision (confirmed):** **Neo4j**, run as a single local Docker container in the single-tenant MVP.
 
@@ -91,7 +96,18 @@ This is the "learns from your conversations about your data" piece — it's expl
 ### 3.6 Retrieval + retrieval trace
 - Hybrid retrieval: entity/vector search to find seed nodes → k-hop graph traversal → optionally pull in community summaries for broad/aggregate questions → rerank → assemble context.
 - **Every retrieval produces a trace object**, stored (not just logged): seed nodes + scores, each expansion hop with the edges traversed and why, nodes/edges actually included in the final context, final prompt.
+- Each fact in the trace carries its current confidence score (§3.7) — retrieval can rank/filter by it, and the Inspector can show *why* a low-corroboration fact was still used.
 - This trace is a first-class artifact the UI reads — see below.
+
+### 3.7 Confidence & corroboration
+A fact's confidence is a composite, computed and revised over its whole lifecycle — not a single LLM logprob frozen at extraction time:
+
+- **Set at extraction (§3.3):** the LLM's own confidence in the triple, weighted by source-type reliability (a structured table cell is more reliable than an inferred claim in prose).
+- **Revised at consolidation (§3.4):** corroboration from independent episodes raises it, contradictions lower it, and staleness (no reinforcing episode in a long time) decays it.
+- **Stored on the edge** as a `confidence` property, versioned alongside the bi-temporal `valid_at`/`invalid_at` fields it sits next to.
+- **Surfaced everywhere, not just computed:** edge weight/opacity in the Graph Explorer, a per-fact score in the Retrieval Inspector, and inline on chat citations — the same number, one source of truth, rendered in three places.
+
+This is built in from Phase 2 (extraction) rather than retrofitted later, so retrieval has something real to rank by from day one instead of the UI growing a score with nothing behind it.
 
 ## 4. UI surfaces
 
@@ -99,10 +115,10 @@ This is the "learns from your conversations about your data" piece — it's expl
 |---|---|
 | Sources | Upload files, see parse/extraction status per file |
 | Ontology Studio | Visual schema editor; review queue for discovery-cycle proposals |
-| Graph Explorer | Interactive graph view, filter by type/time, node detail with provenance back to source doc |
-| Chat | Ask questions, answers with inline citations to graph nodes |
-| Retrieval Inspector | Per-answer: highlights the exact subgraph used, hop-by-hop trace, scores — the "explain this answer" view |
-| Discovery Feed | Timeline of learned insights / pending ontology suggestions to accept or reject |
+| Graph Explorer | Interactive graph view, filter by type/time/confidence, node detail with provenance back to source doc |
+| Chat | Ask questions, answers with inline citations and confidence to graph nodes |
+| Retrieval Inspector | Per-answer: highlights the exact subgraph used, hop-by-hop trace, scores and confidence — the "explain this answer" view |
+| Discovery Feed | Timeline combining periodic-memory change digests (§3.4) and pending ontology suggestions to accept or reject |
 
 Graph Explorer and Retrieval Inspector should share the same graph-rendering component — the inspector is really "Graph Explorer with a highlighted subgraph and a trace sidebar," not a separate visualization.
 
