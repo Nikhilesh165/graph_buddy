@@ -1,0 +1,74 @@
+#shell {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 64px 20px;
+  text-align: center;
+}
+
+.subtitle {
+  margin-top: 0;
+  color: var(--text);
+}
+
+.badges {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 32px 0;
+  text-align: left;
+}
+
+.badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.badge-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text);
+  flex-shrink: 0;
+}
+
+.badge--ok .badge-dot {
+  background: #22c55e;
+}
+
+.badge--error .badge-dot,
+.badge--unreachable .badge-dot {
+  background: #ef4444;
+}
+
+.badge--checking .badge-dot {
+  background: #eab308;
+}
+
+.badge-label {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.badge-state {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.badge-detail {
+  flex-basis: 100%;
+  color: var(--text);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.hint {
+  font-size: 14px;
+}
