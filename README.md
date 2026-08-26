@@ -29,3 +29,5 @@ npm run dev                            # http://localhost:5173
 The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `GET /health/graph`. The backend boots even without Neo4j or an API key configured — `/health/graph` reports the specific error instead of the app crashing, and uploading a source + bootstrapping an ontology work independently of Graphiti/Neo4j entirely (see `docs/ARCHITECTURE.md` §3.1–3.2). Extraction and chat do need a reachable Neo4j and `OPENAI_API_KEY` — they return a clean 503/502 rather than crashing when those aren't available.
 
 Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API key required — Graphiti and every LLM call are mocked).
+
+Want something to upload right away? [`examples/sample-sources/`](examples/sample-sources) has five example files (PDF/DOCX/CSV/TXT/MD) describing a fictional startup, with the same people, projects, and customers recurring across all five -- good for exercising ontology bootstrap and extraction end to end.

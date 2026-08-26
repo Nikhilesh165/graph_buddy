@@ -1,0 +1,11 @@
+employee_id,name,role,department,manager,location,start_date,email
+E001,Maria Chen,CEO & Co-Founder,Executive,,Austin HQ,2021-03-01,maria.chen@solsticerobotics.com
+E002,David Okoye,CTO & Co-Founder,Executive,,Austin HQ,2021-03-01,david.okoye@solsticerobotics.com
+E003,Priya Nair,VP of Engineering,Engineering,David Okoye,Austin HQ,2021-09-15,priya.nair@solsticerobotics.com
+E004,Tom Alvarez,Head of Sales,Sales,Maria Chen,Austin HQ,2022-01-10,tom.alvarez@solsticerobotics.com
+E005,Sam Whitfield,Senior Firmware Engineer,Engineering,Priya Nair,Austin HQ,2022-04-01,sam.whitfield@solsticerobotics.com
+E006,Lena Kowalski,Robotics Engineer,Engineering,Priya Nair,Des Moines Office,2022-06-20,lena.kowalski@solsticerobotics.com
+E007,Jordan Blake,Field Applications Engineer,Engineering,Priya Nair,Des Moines Office,2023-02-13,jordan.blake@solsticerobotics.com
+E008,Ana Torres,Account Executive,Sales,Tom Alvarez,Austin HQ,2023-05-01,ana.torres@solsticerobotics.com
+E009,Grace Kim,People Operations Lead,Operations,Maria Chen,Austin HQ,2022-11-07,grace.kim@solsticerobotics.com
+E010,Ravi Subramaniam,Data Scientist,Engineering,Priya Nair,Remote,2023-08-21,ravi.subramaniam@solsticerobotics.com

@@ -1,0 +1,37 @@
+Solstice Robotics -- Product Sync
+Date: 2026-06-04
+Attendees: Priya Nair (VP of Engineering), David Okoye (CTO), Sam Whitfield (Senior Firmware Engineer), Lena Kowalski (Robotics Engineer)
+
+1. Project Meridian battery life
+Sam reported that the latest Project Meridian flight controller firmware (v2.3) is
+drawing more current than expected during hover-and-scan mode, cutting flight time
+from the target 42 minutes down to 31 minutes. David asked Sam to profile the
+power draw against the v2.2 baseline before Friday. Lena volunteered to test a
+revised propeller pitch on the bench rig in the Des Moines office this week.
+
+2. GreenField Farms pilot
+Because of the battery issue, the team agreed to push the GreenField Farms pilot
+in Iowa back by two weeks, from June 15 to June 29. Priya will let Tom Alvarez
+know so he can update GreenField Farms' operations manager, Carl Jensen, before
+end of day. Jordan Blake will travel on-site for the rescheduled pilot to handle
+field calibration.
+
+3. Project Halcyon swarm coordination
+Ravi Subramaniam shared early results from the swarm-coordination model used in
+Project Halcyon: the current pathing algorithm reduces overlap between drones by
+18% compared to the naive grid-search approach used in the AgriNova Cooperative
+proof of concept last quarter. David asked Ravi to write up the methodology for
+the upcoming investor update.
+
+4. Hiring
+Priya flagged that Engineering needs one more firmware engineer to support both
+Meridian and Halcyon in parallel. Grace Kim will open the requisition and target
+a start date in Q3.
+
+Action items:
+- Sam Whitfield: power-draw comparison report by Friday, June 5.
+- Lena Kowalski: propeller pitch bench test, results by June 10.
+- Priya Nair: notify Tom Alvarez of the GreenField Farms pilot delay.
+- Jordan Blake: on-site field calibration for GreenField Farms, week of June 29.
+- Ravi Subramaniam: Halcyon methodology write-up for investor update.
+- Grace Kim: open firmware engineer requisition.
