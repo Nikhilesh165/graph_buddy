@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.chat import router as chat_router
 from app.api.routes.graph import router as graph_router
 from app.api.routes.health import router as health_router
 from app.api.routes.ontology import router as ontology_router
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(sources_router)
     app.include_router(ontology_router)
     app.include_router(graph_router)
+    app.include_router(chat_router)
 
     return app
 

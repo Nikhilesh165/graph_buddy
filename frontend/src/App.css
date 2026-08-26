@@ -506,3 +506,117 @@ input[type='search'] {
   color: var(--text);
   font-style: italic;
 }
+
+/* Chat */
+
+.chat-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-question {
+  align-self: flex-start;
+  max-width: 80%;
+  background: var(--code-bg);
+  color: var(--text-h);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.chat-answer {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--text-h);
+  line-height: 1.5;
+}
+
+.citation-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.citation-index {
+  font-family: var(--mono);
+  color: var(--text-h);
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.chat-input-row input {
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.explain-button {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+/* Retrieval Inspector */
+
+.trace-stepper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.trace-current-fact {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--text-h);
+  margin-bottom: 16px;
+}
+
+.trace-context-toggle {
+  display: block;
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.trace-context {
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--code-bg);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-h);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}

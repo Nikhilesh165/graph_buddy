@@ -31,8 +31,10 @@ def init_engine(settings: Settings) -> Engine:
 def create_db_and_tables(engine: Engine) -> None:
     # Import models so their tables are registered on SQLModel.metadata before
     # create_all runs.
+    from app.models import chat as _chat  # noqa: F401
     from app.models import episode as _episode  # noqa: F401
     from app.models import ontology as _ontology  # noqa: F401
+    from app.models import retrieval_trace as _retrieval_trace  # noqa: F401
     from app.models import source as _source  # noqa: F401
 
     SQLModel.metadata.create_all(engine)
