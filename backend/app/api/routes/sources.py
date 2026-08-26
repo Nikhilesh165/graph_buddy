@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
+from app.models.episode import Episode
 from app.models.source import SUPPORTED_EXTENSIONS, Source, SourceRead
 from app.services import extraction_service, ontology_service
 from app.services.parsing import parse_file
@@ -160,6 +161,15 @@ async def extract_source(
     source.edge_count = summary.edges_touched
     source.extracted_at = datetime.now(UTC)
     session.add(source)
+    for record in summary.episode_records:
+        session.add(
+            Episode(
+                episode_uuid=record.episode_uuid,
+                source_id=source.id,
+                chunk_index=record.chunk_index,
+                chunk_preview=record.chunk_preview,
+            )
+        )
     session.commit()
 
     return ExtractionResult(

@@ -60,6 +60,12 @@ SOURCE_RELIABILITY_WEIGHT: dict[str, float] = {
 }
 DEFAULT_RELIABILITY_WEIGHT = 0.8
 
+# How much of a chunk's text to keep as a provenance excerpt (app/models/episode.py
+# `chunk_preview`) -- enough for the Graph Explorer's node-detail panel to show
+# a meaningful quote without persisting the full chunk a second time outside
+# of Graphiti's own episode content.
+EPISODE_PREVIEW_CHARS = 400
+
 
 def reliability_weight(filename: str) -> float:
     return SOURCE_RELIABILITY_WEIGHT.get(Path(filename).suffix.lower(), DEFAULT_RELIABILITY_WEIGHT)
@@ -165,11 +171,26 @@ class SampleFact:
 
 
 @dataclass
+class EpisodeRecord:
+    """One episode Graphiti actually created for this source -- the route
+    persists these as app/models/episode.py rows after extraction succeeds,
+    so the Graph Explorer can resolve provenance later (see that module's
+    docstring). `chunk_index` matches this chunk's position from
+    `chunk_source` above.
+    """
+
+    chunk_index: int
+    episode_uuid: str
+    chunk_preview: str
+
+
+@dataclass
 class ExtractionSummary:
     episodes_added: int = 0
     nodes_touched: int = 0
     edges_touched: int = 0
     sample_facts: list[SampleFact] = field(default_factory=list)
+    episode_records: list[EpisodeRecord] = field(default_factory=list)
 
 
 MAX_SAMPLE_FACTS = 20
@@ -204,6 +225,13 @@ async def extract_source(
             edge_type_map=edge_type_map,
         )
         summary.episodes_added += 1
+        summary.episode_records.append(
+            EpisodeRecord(
+                chunk_index=index,
+                episode_uuid=result.episode.uuid,
+                chunk_preview=chunk[:EPISODE_PREVIEW_CHARS],
+            )
+        )
         nodes_seen.update(node.uuid for node in result.nodes)
 
         for edge in result.edges:
