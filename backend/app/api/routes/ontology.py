@@ -51,7 +51,7 @@ async def bootstrap_ontology(
     sample = ontology_service.sample_for_bootstrap(source, settings.ontology_bootstrap_sample_chars)
     try:
         proposal = await ontology_service.bootstrap_ontology(
-            sample, api_key=settings.anthropic_api_key, model=settings.anthropic_ontology_model
+            sample, api_key=settings.openai_api_key, model=settings.openai_ontology_model
         )
     except Exception as exc:  # noqa: BLE001 - surface any LLM/config failure
         # (missing key, bad model, API error) as a clean error, not a 500.

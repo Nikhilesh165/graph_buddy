@@ -120,8 +120,8 @@ async def ask(
         result = await chat_service.ask(
             graphiti_state.graphiti,
             question,
-            api_key=settings.anthropic_api_key,
-            model=settings.anthropic_model or "claude-sonnet-5",
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
         )
     except Exception as exc:  # noqa: BLE001 - any LLM/retrieval/config failure
         # (missing key, bad model, API error) surfaces as a clean error, not a 500.

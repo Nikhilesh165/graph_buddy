@@ -57,7 +57,7 @@ def test_bootstrap_unparsed_source_is_400(
 def test_bootstrap_llm_failure_is_502_not_500(
     client: TestClient, mock_propose_ontology: AsyncMock
 ) -> None:
-    mock_propose_ontology.side_effect = RuntimeError("no ANTHROPIC_API_KEY configured")
+    mock_propose_ontology.side_effect = RuntimeError("no OPENAI_API_KEY configured")
     source = client.post(
         "/sources", files={"file": ("note.txt", b"some content", "text/plain")}
     ).json()

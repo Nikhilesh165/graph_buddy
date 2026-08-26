@@ -1,17 +1,22 @@
-"""Our own direct Anthropic calls for tasks outside Graphiti's own extraction
+"""Our own direct OpenAI calls for tasks outside Graphiti's own extraction
 pipeline (ontology bootstrap, chat answers) -- distinct from
-`graphiti_client.py`'s AnthropicClient, which is wired for Graphiti's
-internal extraction prompts, not custom structured output or free-text
-generation. Stateless per-call, no persistent connection to manage.
+`graphiti_client.py`'s OpenAIClient, which is wired for Graphiti's internal
+extraction prompts, not custom structured output or free-text generation.
+Stateless per-call, no persistent connection to manage.
+
+Structured output (ontology bootstrap) uses the Responses API's native
+`text_format=<pydantic model>` (`client.responses.parse`, confirmed against
+the installed `openai` SDK by reading `graphiti_core`'s own
+`openai_client.py`, which uses the same call) -- the model's response is
+validated straight into `OntologyProposal`, no manual JSON-schema tool
+definition or response-block scanning required.
 """
 
 from __future__ import annotations
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
 from app.models.ontology import OntologyProposal
-
-_TOOL_NAME = "propose_ontology"
 
 _BOOTSTRAP_PROMPT = """You are bootstrapping a knowledge graph ontology from a sample \
 of a user's uploaded document.
@@ -28,42 +33,22 @@ labels. Property `type` values must be one of: string, number, integer, boolean.
 Document sample:
 ---
 {sample}
----
-
-Call the {tool_name} tool with your proposal."""
-
-
-def _tool_schema() -> dict:
-    return {
-        "name": _TOOL_NAME,
-        "description": (
-            "Propose a starter ontology (entity types and relation types) for "
-            "the given document sample."
-        ),
-        "input_schema": OntologyProposal.model_json_schema(),
-    }
+---"""
 
 
 async def propose_ontology(
     sample_text: str, *, api_key: str | None, model: str
 ) -> OntologyProposal:
-    client = AsyncAnthropic(api_key=api_key)
-    response = await client.messages.create(
+    client = AsyncOpenAI(api_key=api_key)
+    response = await client.responses.parse(
         model=model,
-        max_tokens=4096,
-        tools=[_tool_schema()],
-        tool_choice={"type": "tool", "name": _TOOL_NAME},
-        messages=[
-            {
-                "role": "user",
-                "content": _BOOTSTRAP_PROMPT.format(sample=sample_text, tool_name=_TOOL_NAME),
-            }
-        ],
+        input=[{"role": "user", "content": _BOOTSTRAP_PROMPT.format(sample=sample_text)}],
+        max_output_tokens=4096,
+        text_format=OntologyProposal,
     )
-    for block in response.content:
-        if block.type == "tool_use" and block.name == _TOOL_NAME:
-            return OntologyProposal.model_validate(block.input)
-    raise RuntimeError("Claude did not return a tool_use block for propose_ontology")
+    if response.output_parsed is None:
+        raise RuntimeError("OpenAI did not return a parsed ontology proposal")
+    return response.output_parsed
 
 
 _CHAT_SYSTEM = """You are answering questions about a knowledge graph built from the \
@@ -94,19 +79,13 @@ async def generate_chat_answer(
     api_key: str | None,
     model: str,
 ) -> str:
-    client = AsyncAnthropic(api_key=api_key)
-    response = await client.messages.create(
+    client = AsyncOpenAI(api_key=api_key)
+    response = await client.responses.create(
         model=model,
-        max_tokens=1024,
-        system=_CHAT_SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": f"Facts:\n{facts_context}\n\nQuestion: {question}",
-            }
-        ],
+        instructions=_CHAT_SYSTEM,
+        input=f"Facts:\n{facts_context}\n\nQuestion: {question}",
+        max_output_tokens=1024,
     )
-    for block in response.content:
-        if block.type == "text":
-            return block.text
-    raise RuntimeError("Claude did not return a text block for the chat answer")
+    if not response.output_text:
+        raise RuntimeError("OpenAI did not return a text answer for the chat question")
+    return response.output_text

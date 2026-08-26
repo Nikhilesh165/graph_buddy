@@ -126,7 +126,7 @@ Graph Explorer and Retrieval Inspector should share the same graph-rendering com
 
 - **Backend:** Python + FastAPI (Graphiti is Python-native, no cross-language boundary).
 - **Graph/memory:** Graphiti on **Neo4j** (single local Docker container for the single-tenant MVP) — see §3.4 for why.
-- **LLM:** Claude Sonnet for extraction/ontology proposals/chat; a cheaper model for high-volume background discovery-cycle scanning if cost becomes a concern.
+- **LLM:** OpenAI for both inference (extraction, ontology proposals, chat) and embeddings — one provider, one API key. (Originally Claude for inference + OpenAI for embeddings, split across two vendors; consolidated onto OpenAI once nothing was actually gained from the split — Graphiti's embedder and default reranker were already OpenAI-only, per Phase 0's embedding-provider decision, which was never written back into this doc until now.) A cheaper model for high-volume background discovery-cycle scanning is still worth revisiting if cost becomes a concern.
 - **File parsing:** per-type parsers (start simple: `pdfplumber`/`python-docx`/`pandas`; revisit if quality demands `unstructured.io`).
 - **Frontend:** React + TypeScript; graph rendering via `react-force-graph` or `Sigma.js` (large graphs) — reuse the same component for Ontology Studio's schema diagram (smaller, structured) and Graph Explorer (larger, force-directed).
 - **Background jobs:** APScheduler is enough for MVP single-tenant; move to Celery/RQ only if/when this needs to scale out.

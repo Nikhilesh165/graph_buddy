@@ -1,6 +1,8 @@
-"""Graphiti wiring: one Graphiti instance, Claude for extraction/chat + OpenAI
-for embeddings (per docs/ARCHITECTURE.md §5; embedding provider chosen for
-this repo's Phase 0 since the docs don't pin one).
+"""Graphiti wiring: one Graphiti instance, OpenAI for inference (extraction),
+embeddings, and reranking alike (per docs/ARCHITECTURE.md §5). This used to
+split inference to Claude and embeddings to OpenAI; consolidated onto one
+provider so there's a single API key to configure and a single vendor
+dependency, rather than two for no functional gain.
 
 Startup must not raise even if Neo4j is unreachable -- see docs/ROADMAP.md
 Phase 0 vs. this project's dev sandbox, which has no Docker daemon. Instead
@@ -13,8 +15,8 @@ import logging
 
 from graphiti_core import Graphiti
 from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
-from graphiti_core.llm_client.anthropic_client import AnthropicClient
 from graphiti_core.llm_client.config import LLMConfig
+from graphiti_core.llm_client.openai_client import OpenAIClient
 
 from app.core.config import Settings
 
@@ -24,20 +26,19 @@ logger = logging.getLogger(__name__)
 def build_graphiti(settings: Settings) -> Graphiti:
     """Construct a Graphiti instance. Does not connect to Neo4j yet."""
     llm_config = LLMConfig(
-        api_key=settings.anthropic_api_key,
-        model=settings.anthropic_model,
+        api_key=settings.openai_api_key,
+        model=settings.openai_model,
     )
     return Graphiti(
         uri=settings.neo4j_uri,
         user=settings.neo4j_user,
         password=settings.neo4j_password,
-        llm_client=AnthropicClient(config=llm_config),
+        llm_client=OpenAIClient(config=llm_config),
         embedder=OpenAIEmbedder(
             config=OpenAIEmbedderConfig(api_key=settings.openai_api_key)
         ),
         # cross_encoder left as graphiti-core's default (OpenAIRerankerClient) --
-        # we're already depending on OPENAI_API_KEY for embeddings, so this adds
-        # no new external dependency.
+        # same provider, no new external dependency.
     )
 
 
@@ -45,12 +46,12 @@ class GraphitiState:
     """Holds the process-wide Graphiti instance and its connectivity status.
 
     `graphiti` is built lazily rather than in `__init__`: constructing the
-    OpenAI embedder client raises immediately if no API key is configured
-    (unlike the Anthropic client, which only fails on first real request), so
-    even *building* Graphiti can fail before any network call is attempted.
-    Treating that the same as a failed connection -- caught, reported via
-    `error`, never raised out of startup -- is what keeps the app booting
-    with missing config/keys or an unreachable Neo4j alike.
+    OpenAI clients (embedder and LLM alike) raises immediately if no API key
+    is configured, so even *building* Graphiti can fail before any network
+    call is attempted. Treating that the same as a failed connection --
+    caught, reported via `error`, never raised out of startup -- is what
+    keeps the app booting with missing config/keys or an unreachable Neo4j
+    alike.
     """
 
     def __init__(self, settings: Settings) -> None:
