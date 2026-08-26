@@ -7,12 +7,18 @@ dependencies = [
     "fastapi>=0.141.1",
     "graphiti-core[anthropic]>=0.29.3",
     "httpx>=0.28.1",
+    "pandas>=3.0.5",
+    "pdfplumber>=0.11.10",
     "pydantic-settings>=2.15.0",
+    "python-docx>=1.2.0",
+    "python-multipart>=0.0.32",
+    "sqlmodel>=0.0.39",
     "uvicorn[standard]>=0.52.4",
 ]
 
 [dependency-groups]
 dev = [
+    "fpdf2>=2.8.8",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.4",
@@ -26,3 +32,9 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom (`= Depends(...)`, `= File(...)`, ...)
+# is a function call in an argument default by design -- not the mutable-
+# default footgun B008 exists to catch.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Query"]

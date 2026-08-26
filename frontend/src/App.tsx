@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { getGraphHealth, getHealth } from './api/client'
+import { getGraphHealth, getHealth, getOntology } from './api/client'
+import { OntologyStudio } from './components/OntologyStudio'
+import { SourcesPanel } from './components/SourcesPanel'
+import type { OntologyVersion } from './types'
 import './App.css'
 
 type BadgeState = 'checking' | 'ok' | 'error' | 'unreachable'
@@ -19,6 +22,7 @@ function App() {
   const [backendState, setBackendState] = useState<BadgeState>('checking')
   const [graphState, setGraphState] = useState<BadgeState>('checking')
   const [graphDetail, setGraphDetail] = useState<string | undefined>(undefined)
+  const [ontology, setOntology] = useState<OntologyVersion | null>(null)
 
   useEffect(() => {
     getHealth()
@@ -31,12 +35,16 @@ function App() {
         setGraphDetail(result.detail)
       })
       .catch(() => setGraphState('unreachable'))
+
+    getOntology()
+      .then(setOntology)
+      .catch(() => setOntology(null))
   }, [])
 
   return (
     <main id="shell">
       <h1>Graph Buddy</h1>
-      <p className="subtitle">Phase 0 — foundations</p>
+      <p className="subtitle">Phase 1 — ingestion + ontology bootstrap</p>
 
       <section className="badges">
         <StatusBadge label="Backend" state={backendState} />
@@ -45,8 +53,16 @@ function App() {
 
       <p className="hint">
         Graph DB unreachable? Run <code>docker compose up -d</code> from the repo root, then
-        reload.
+        reload. (Sources/ontology below work independently of it.)
       </p>
+
+      {ontology && (
+        <SourcesPanel hasOntology={ontology.version_number > 0} onOntologyChange={setOntology} />
+      )}
+
+      {ontology && (
+        <OntologyStudio key={ontology.id} ontology={ontology} onSaved={setOntology} />
+      )}
     </main>
   )
 }

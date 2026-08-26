@@ -3,18 +3,35 @@
 None of these tests talk to a real Neo4j, Anthropic, or OpenAI -- `build_graphiti`
 is monkeypatched to return a lightweight fake with the same shape our code
 relies on (`driver.client.verify_connectivity`, `build_indices_and_constraints`,
-`close`), so the suite is deterministic and runs with no external services and
-no API keys, per docs/ROADMAP.md Phase 0's "no live run needed to verify" plan.
+`close`), and `app.core.llm.propose_ontology` is mocked for anything that
+touches ontology bootstrap. Every test also gets its own SQLite DB + uploads
+dir (never the real `backend/data/` used by `uv run uvicorn ...` locally), so
+the suite is deterministic and side-effect-free with no external services and
+no API keys, per docs/ROADMAP.md Phase 0/1's "no live run needed to verify"
+plan.
 """
 
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app.core.graphiti_client as graphiti_client_module
+import app.core.llm as llm_module
+from app.core.config import get_settings
 from app.main import create_app
+from app.models.ontology import EntityType, OntologyProposal, RelationType
+
+
+@pytest.fixture(autouse=True)
+def _isolated_app_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("UPLOADS_DIR", str(tmp_path / "uploads"))
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 class FakeNeo4jClient:
@@ -70,3 +87,35 @@ def client_with_graph_down(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     )
     with TestClient(create_app()) as client:
         yield client
+
+
+@pytest.fixture
+def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """Plain client for sources/ontology endpoints, which don't care about
+    Graphiti's connectivity state -- mocked as connected just so it doesn't
+    log warnings during the test.
+    """
+    monkeypatch.setattr(
+        graphiti_client_module,
+        "build_graphiti",
+        lambda settings: FakeGraphiti(should_connect=True),
+    )
+    with TestClient(create_app()) as c:
+        yield c
+
+
+@pytest.fixture
+def mock_propose_ontology(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Patches app.core.llm.propose_ontology so ontology bootstrap never calls
+    the real Anthropic API. Returns the mock so a test can override
+    return_value/side_effect for its own scenario.
+    """
+    default_proposal = OntologyProposal(
+        entity_types=[EntityType(name="Person", description="A person mentioned in the text")],
+        relation_types=[
+            RelationType(name="KNOWS", source_types=["Person"], target_types=["Person"])
+        ],
+    )
+    mock = AsyncMock(return_value=default_proposal)
+    monkeypatch.setattr(llm_module, "propose_ontology", mock)
+    return mock
