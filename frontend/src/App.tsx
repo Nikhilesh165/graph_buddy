@@ -1,6 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
-import { AppDataProvider } from './lib/AppDataContext'
+import { AppDataProvider } from './lib/AppDataProvider'
 import { ChatPage } from './pages/ChatPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { GraphPage } from './pages/GraphPage'

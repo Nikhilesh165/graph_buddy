@@ -1,11 +1,12 @@
 import { createContext, useContext } from 'react'
 import type { OntologyVersion } from '../types'
 
-// Split out from AppDataContext.tsx (the provider component) so that file
+// Split out from AppDataProvider.tsx (the provider component) so that file
 // exports only a component -- same "keep constants/hooks in their own
 // file" convention as lib/confidence.ts, for oxlint's
 // react/only-export-components (mixing component + hook exports defeats
-// Fast Refresh).
+// Fast Refresh). Named distinctly from AppDataProvider.tsx so Vite on
+// Windows cannot resolve an extensionless import of one to the other.
 
 export type BadgeState = 'checking' | 'ok' | 'error' | 'unreachable'
 
