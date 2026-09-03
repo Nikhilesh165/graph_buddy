@@ -1,25 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { getRetrievalTrace } from '../api/client'
 import type { GraphEdge, GraphNode, RetrievalTrace } from '../types'
 import { formatConfidence } from '../lib/confidence'
 import { GraphCanvas } from './GraphCanvas'
+import { Button } from './ui/Button'
 
 type Props = {
   turnId: string
   entityTypeOrder: string[]
-  onClose: () => void
 }
 
 // The "explain this answer" view (docs/ROADMAP.md Phase 5): reuses
 // GraphCanvas to render the exact subgraph a chat answer's retrieval pulled
 // in, and lets the user step fact-by-fact through it with the currently
-// stepped-to fact highlighted on the canvas.
-
-// Caller (App.tsx) remounts this with `key={turnId}` per inspected turn,
-// same convention as OntologyStudio's `key={ontology.id}` -- so this
-// component's own state starts fresh for every turn and this effect only
-// ever needs to do one thing: fetch.
-export function RetrievalInspector({ turnId, entityTypeOrder, onClose }: Props) {
+// stepped-to fact highlighted on the canvas. Rendered inside ui/Sheet.tsx's
+// slide-over by ChatPage, which owns the open/close state and remounts
+// this with `key={turnId}` per inspected turn (same convention as
+// OntologyStudio's `key={ontology.id}`) so this component's own state
+// starts fresh for every turn and its effect only ever needs to fetch.
+export function RetrievalInspector({ turnId, entityTypeOrder }: Props) {
   const [trace, setTrace] = useState<RetrievalTrace | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -66,54 +66,55 @@ export function RetrievalInspector({ turnId, entityTypeOrder, onClose }: Props) 
   const currentFact = facts[stepIndex]
 
   return (
-    <section className="panel panel--wide">
-      <div className="panel-header">
-        <h2>Retrieval Inspector</h2>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
-      {loading && <p className="muted">Loading trace…</p>}
-      {error && <p className="error-text">{error}</p>}
+    <div>
+      {loading && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading trace…
+        </p>
+      )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
       {trace && (
         <>
-          <p className="muted">
-            Query: <span className="citation-index">“{trace.query}”</span> — {facts.length} fact
+          <p className="text-sm text-muted-foreground">
+            Query: <span className="font-mono text-foreground">“{trace.query}”</span> — {facts.length} fact
             {facts.length === 1 ? '' : 's'} retrieved, {trace.seed_nodes.filter((n) => n.is_seed).length}{' '}
             seed node{trace.seed_nodes.filter((n) => n.is_seed).length === 1 ? '' : 's'}.
           </p>
 
           {facts.length > 0 && (
-            <div className="trace-stepper">
-              <button
-                type="button"
+            <div className="my-4 flex items-center gap-3">
+              <Button
+                size="icon"
+                variant="outline"
                 disabled={stepIndex === 0}
                 onClick={() => setStepIndex((i) => Math.max(0, i - 1))}
+                aria-label="Previous fact"
               >
-                ← Prev
-              </button>
-              <span className="muted">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground">
                 Fact {stepIndex + 1} of {facts.length}
               </span>
-              <button
-                type="button"
+              <Button
+                size="icon"
+                variant="outline"
                 disabled={stepIndex >= facts.length - 1}
                 onClick={() => setStepIndex((i) => Math.min(facts.length - 1, i + 1))}
+                aria-label="Next fact"
               >
-                Next →
-              </button>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           )}
 
           {currentFact && (
-            <div className="trace-current-fact">
-              <span className="citation-index">[{stepIndex + 1}]</span> {currentFact.fact}
-              <span className="confidence-badge">
-                confidence: {formatConfidence(currentFact.confidence)}
-              </span>
-              <span className="confidence-badge">rerank score: {currentFact.score.toFixed(3)}</span>
+            <div className="mb-5 rounded-lg border border-border bg-accent/40 px-4 py-3 text-sm text-foreground">
+              <span className="font-mono text-muted-foreground">[{stepIndex + 1}]</span> {currentFact.fact}
+              <div className="mt-1.5 flex gap-3 font-mono text-xs text-muted-foreground">
+                <span>confidence: {formatConfidence(currentFact.confidence)}</span>
+                <span>rerank score: {currentFact.score.toFixed(3)}</span>
+              </div>
             </div>
           )}
 
@@ -123,18 +124,23 @@ export function RetrievalInspector({ turnId, entityTypeOrder, onClose }: Props) 
             entityTypeOrder={entityTypeOrder}
             emptyMessage="No facts were retrieved for this question."
             focusEdgeUuid={currentFact?.edge_uuid ?? null}
+            height={380}
           />
 
           <button
             type="button"
-            className="link-button trace-context-toggle"
+            className="mt-5 text-sm font-medium text-primary hover:underline"
             onClick={() => setShowContext((v) => !v)}
           >
             {showContext ? 'Hide' : 'Show'} exact context sent to the model
           </button>
-          {showContext && <pre className="trace-context">{trace.final_context || '(empty)'}</pre>}
+          {showContext && (
+            <pre className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-code-bg p-3 font-mono text-xs text-foreground">
+              {trace.final_context || '(empty)'}
+            </pre>
+          )}
         </>
       )}
-    </section>
+    </div>
   )
 }

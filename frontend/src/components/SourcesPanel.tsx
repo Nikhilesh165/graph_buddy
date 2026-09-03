@@ -1,15 +1,42 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type DragEvent } from 'react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Sparkles,
+  UploadCloud,
+  Workflow,
+} from 'lucide-react'
 import { bootstrapOntology, extractSource, getSource, listSources, uploadSource } from '../api/client'
-import type { OntologyVersion, SourceRead } from '../types'
+import { Badge, type BadgeVariant } from './ui/Badge'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
+import { cn } from '../lib/cn'
+import type { OntologyVersion, SourceRead, SourceStatus, GraphitiStatus } from '../types'
 
 type Props = {
   hasOntology: boolean
   onOntologyChange: (version: OntologyVersion) => void
 }
 
+const STATUS_BADGE: Record<SourceStatus, BadgeVariant> = {
+  parsed: 'success',
+  failed: 'destructive',
+  uploaded: 'warning',
+}
+
+const GRAPHITI_BADGE: Record<GraphitiStatus, BadgeVariant> = {
+  extracted: 'success',
+  extracting: 'warning',
+  failed: 'destructive',
+  not_extracted: 'secondary',
+}
+
 export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
   const [sources, setSources] = useState<SourceRead[]>([])
   const [uploading, setUploading] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
   const [bootstrappingId, setBootstrappingId] = useState<string | null>(null)
   const [extractingId, setExtractingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -76,73 +103,130 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
     }
   }
 
+  function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setDragActive(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) void handleUpload(file)
+  }
+
   return (
-    <section className="panel">
-      <h2>Sources</h2>
-      <div className="upload-row">
+    <div className="flex flex-col gap-6">
+      <Card
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragActive(true)
+        }}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={handleDrop}
+        className={cn(
+          'border-dashed py-10 text-center transition-colors',
+          dragActive ? 'border-primary bg-accent/60' : 'hover:border-primary/50',
+        )}
+      >
         <input
           ref={fileInputRef}
           type="file"
           accept=".pdf,.docx,.csv,.txt,.md"
           disabled={uploading}
+          className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0]
             if (file) void handleUpload(file)
           }}
         />
-        {uploading && <span className="muted">Uploading & parsing…</span>}
-      </div>
+        <div className="flex flex-col items-center gap-2 px-6">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-accent-foreground">
+            {uploading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <UploadCloud className="h-5 w-5" strokeWidth={1.75} />
+            )}
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            {uploading ? 'Uploading & parsing…' : 'Drop a file here, or browse'}
+          </p>
+          <p className="text-xs text-muted-foreground">PDF, DOCX, CSV, TXT, or Markdown</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-1"
+          >
+            Choose file
+          </Button>
+        </div>
+      </Card>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && (
+        <p className="flex items-center gap-1.5 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+        </p>
+      )}
 
       {sources.length === 0 ? (
-        <p className="muted">No sources uploaded yet.</p>
+        <p className="text-sm text-muted-foreground">No sources uploaded yet.</p>
       ) : (
-        <ul className="source-list">
+        <ul className="flex flex-col gap-2.5">
           {sources.map((source) => (
-            <li key={source.id} className="source-row">
-              <div className="source-main">
-                <span className="source-filename">{source.filename}</span>
-                <span className={`source-status source-status--${source.status}`}>
-                  {source.status}
-                </span>
+            <Card key={source.id} className="px-4 py-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                  <span className="truncate font-mono text-sm text-foreground">{source.filename}</span>
+                </div>
+                <Badge variant={STATUS_BADGE[source.status]}>{source.status}</Badge>
               </div>
+
               {source.status === 'failed' && (
-                <span className="error-text">{source.parse_error}</span>
+                <p className="mt-2 text-xs text-destructive">{source.parse_error}</p>
               )}
+
               {source.status === 'parsed' && (
-                <div className="source-actions">
-                  <button
-                    type="button"
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
                     disabled={bootstrappingId === source.id}
                     onClick={() => void runBootstrap(source.id)}
                   >
-                    {bootstrappingId === source.id
-                      ? 'Bootstrapping…'
-                      : 'Propose ontology from this source'}
-                  </button>
-                  <button
-                    type="button"
+                    {bootstrappingId === source.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    Propose ontology
+                  </Button>
+                  <Button
+                    size="sm"
                     disabled={!hasOntology || extractingId === source.id}
                     title={hasOntology ? undefined : 'Bootstrap or define an ontology first'}
                     onClick={() => void runExtract(source.id)}
                   >
-                    {extractingId === source.id ? 'Extracting…' : 'Extract into graph'}
-                  </button>
-                  <span className={`graphiti-status graphiti-status--${source.graphiti_status}`}>
+                    {extractingId === source.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Workflow className="h-3.5 w-3.5" />
+                    )}
+                    Extract into graph
+                  </Button>
+                  <Badge variant={GRAPHITI_BADGE[source.graphiti_status]} className="gap-1">
+                    {source.graphiti_status === 'extracted' && <CheckCircle2 className="h-3 w-3" />}
                     {source.graphiti_status === 'extracted'
-                      ? `extracted: ${source.node_count} nodes, ${source.edge_count} edges`
+                      ? `${source.node_count} nodes, ${source.edge_count} edges`
                       : source.graphiti_status.replace('_', ' ')}
-                  </span>
+                  </Badge>
                   {source.graphiti_status === 'failed' && source.graphiti_error && (
-                    <span className="error-text">{source.graphiti_error}</span>
+                    <span className="text-xs text-destructive">{source.graphiti_error}</span>
                   )}
                 </div>
               )}
-            </li>
+            </Card>
           ))}
         </ul>
       )}
-    </section>
+    </div>
   )
 }
