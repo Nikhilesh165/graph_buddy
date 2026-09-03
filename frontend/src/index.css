@@ -1,18 +1,44 @@
+@import 'tailwindcss';
+
+/* Design tokens -----------------------------------------------------------
+ * shadcn-style semantic names (background/foreground/card/border/primary/...)
+ * so Tailwind utilities like `bg-card` or `text-muted-foreground` work
+ * directly. Values are set once here (light) and overridden under the dark
+ * media query below -- components never need a `dark:` prefix for these.
+ *
+ * `--primary` reuses the Graph Explorer's "entity type 1" blue
+ * (lib/palette.ts's CATEGORICAL[0]) so the brand accent and the graph's own
+ * color language agree. lib/palette.ts itself is untouched: canvas drawing
+ * needs concrete hex per mode, not CSS custom properties. */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
+  --background: #fbfbfa;
+  --foreground: #0b0b0b;
+  --card: #ffffff;
+  --card-foreground: #0b0b0b;
+  --popover: #ffffff;
+  --popover-foreground: #0b0b0b;
+  --primary: #2a78d6;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f1ef;
+  --secondary-foreground: #0b0b0b;
+  --muted: #f1f1ef;
+  --muted-foreground: #6b6375;
+  --accent: #eef3fb;
+  --accent-foreground: #16406e;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #16a34a;
+  --warning: #ca8a04;
   --border: #e5e4e7;
+  --input: #e5e4e7;
+  --ring: #2a78d6;
   --code-bg: #f4f3ec;
+  --radius: 0.75rem;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
   color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -21,33 +47,139 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
+    --background: #101116;
+    --foreground: #f3f4f6;
+    --card: #16171d;
+    --card-foreground: #f3f4f6;
+    --popover: #16171d;
+    --popover-foreground: #f3f4f6;
+    --primary: #3987e5;
+    --primary-foreground: #0b0b0b;
+    --secondary: #1e1f27;
+    --secondary-foreground: #f3f4f6;
+    --muted: #1e1f27;
+    --muted-foreground: #9ca3af;
+    --accent: #182437;
+    --accent-foreground: #9cc4f2;
+    --destructive: #f87171;
+    --destructive-foreground: #1a0505;
+    --success: #22c55e;
+    --warning: #eab308;
     --border: #2e303a;
+    --input: #2e303a;
+    --ring: #3987e5;
     --code-bg: #1f2028;
   }
 }
 
-body {
-  margin: 0;
-  min-height: 100svh;
+@theme inline {
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-code-bg: var(--code-bg);
+
+  --radius-sm: calc(var(--radius) - 0.375rem);
+  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.25rem);
 }
 
-h1 {
-  font-family: var(--sans);
-  font-weight: 500;
-  color: var(--text-h);
-  font-size: 40px;
-  letter-spacing: -1px;
-  margin: 0;
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100svh;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    letter-spacing: 0.1px;
+  }
+
+  code,
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    border-radius: var(--radius-sm);
+    padding: 2px 6px;
+    background: var(--color-code-bg);
+    color: var(--color-foreground);
+  }
+
+  /* Slim, theme-aware scrollbars for the scroll regions this app has a lot
+     of (sidebar nav, chat transcript, node-detail panel, graph legend). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
-code {
-  font-family: var(--mono);
-  font-size: 14px;
-  border-radius: 4px;
-  padding: 2px 6px;
-  background: var(--code-bg);
-  color: var(--text-h);
+@layer utilities {
+  /* Force-graph draws into a plain <canvas> it sizes itself -- this just
+     keeps its wrapper from ever introducing horizontal scroll on narrow
+     viewports. */
+  .graph-canvas-wrap canvas {
+    max-width: 100%;
+  }
+
+  /* Sheet.tsx's enter transitions -- hand-rolled instead of pulling in
+     tailwindcss-animate for two keyframes. */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes slide-in-from-right {
+    from {
+      transform: translateX(100%);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 150ms ease-out;
+  }
+
+  .animate-slide-in-right {
+    animation: slide-in-from-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 }

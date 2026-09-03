@@ -1,90 +1,30 @@
-import { useEffect, useMemo, useState } from 'react'
-import { getGraphHealth, getHealth, getOntology } from './api/client'
-import { Chat } from './components/Chat'
-import { GraphExplorer } from './components/GraphExplorer'
-import { OntologyStudio } from './components/OntologyStudio'
-import { RetrievalInspector } from './components/RetrievalInspector'
-import { SourcesPanel } from './components/SourcesPanel'
-import type { OntologyVersion } from './types'
-import './App.css'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { AppShell } from './components/layout/AppShell'
+import { AppDataProvider } from './lib/AppDataContext'
+import { ChatPage } from './pages/ChatPage'
+import { DashboardPage } from './pages/DashboardPage'
+import { GraphPage } from './pages/GraphPage'
+import { OntologyPage } from './pages/OntologyPage'
+import { SourcesPage } from './pages/SourcesPage'
 
-type BadgeState = 'checking' | 'ok' | 'error' | 'unreachable'
-
-function StatusBadge({ label, state, detail }: { label: string; state: BadgeState; detail?: string }) {
-  return (
-    <div className={`badge badge--${state}`}>
-      <span className="badge-dot" aria-hidden="true" />
-      <span className="badge-label">{label}</span>
-      <span className="badge-state">{state}</span>
-      {detail ? <span className="badge-detail">{detail}</span> : null}
-    </div>
-  )
-}
-
+// Multi-page shell (docs/UI_REHAUL_PLAN.md): AppDataProvider holds the
+// health checks + ontology state every page needs; AppShell renders the
+// sidebar nav and the routed page in its content outlet.
 function App() {
-  const [backendState, setBackendState] = useState<BadgeState>('checking')
-  const [graphState, setGraphState] = useState<BadgeState>('checking')
-  const [graphDetail, setGraphDetail] = useState<string | undefined>(undefined)
-  const [ontology, setOntology] = useState<OntologyVersion | null>(null)
-  const [inspectingTurnId, setInspectingTurnId] = useState<string | null>(null)
-  const entityTypeOrder = useMemo(
-    () => ontology?.entity_types.map((et) => et.name) ?? [],
-    [ontology],
-  )
-
-  useEffect(() => {
-    getHealth()
-      .then(() => setBackendState('ok'))
-      .catch(() => setBackendState('unreachable'))
-
-    getGraphHealth()
-      .then((result) => {
-        setGraphState(result.status === 'ok' ? 'ok' : 'error')
-        setGraphDetail(result.detail)
-      })
-      .catch(() => setGraphState('unreachable'))
-
-    getOntology()
-      .then(setOntology)
-      .catch(() => setOntology(null))
-  }, [])
-
   return (
-    <main id="shell">
-      <h1>Graph Buddy</h1>
-      <p className="subtitle">Phase 5 — retrieval analysis</p>
-
-      <section className="badges">
-        <StatusBadge label="Backend" state={backendState} />
-        <StatusBadge label="Graph DB" state={graphState} detail={graphDetail} />
-      </section>
-
-      <p className="hint">
-        Graph DB unreachable? Run <code>docker compose up -d</code> from the repo root, then
-        reload. (Sources/ontology below work independently of it.)
-      </p>
-
-      {ontology && (
-        <SourcesPanel hasOntology={ontology.version_number > 0} onOntologyChange={setOntology} />
-      )}
-
-      {ontology && (
-        <OntologyStudio key={ontology.id} ontology={ontology} onSaved={setOntology} />
-      )}
-
-      {ontology && ontology.version_number > 0 && <GraphExplorer ontology={ontology} />}
-
-      {ontology && ontology.version_number > 0 && <Chat onExplain={setInspectingTurnId} />}
-
-      {inspectingTurnId && (
-        <RetrievalInspector
-          key={inspectingTurnId}
-          turnId={inspectingTurnId}
-          entityTypeOrder={entityTypeOrder}
-          onClose={() => setInspectingTurnId(null)}
-        />
-      )}
-    </main>
+    <AppDataProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/sources" element={<SourcesPage />} />
+            <Route path="/ontology" element={<OntologyPage />} />
+            <Route path="/graph" element={<GraphPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AppDataProvider>
   )
 }
 
