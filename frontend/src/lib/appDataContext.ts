@@ -20,6 +20,13 @@ export type AppData = {
    * color slot (lib/palette.ts) so it stays stable across pages. */
   entityTypeOrder: string[]
   hasOntology: boolean
+  /** Re-fetch the current ontology -- the discovery cycle changes it in the
+   * background (after uploads, during consolidation), not only in response
+   * to something this tab did. */
+  refreshOntology: () => Promise<void>
+  /** Ontology change proposals awaiting review (sidebar badge). */
+  pendingProposals: number
+  refreshPendingProposals: () => Promise<void>
 }
 
 export const AppDataContext = createContext<AppData | null>(null)

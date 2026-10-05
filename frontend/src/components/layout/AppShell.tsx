@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Menu,
+  Radar,
   Share2,
   UploadCloud,
   Workflow,
@@ -20,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/ontology', label: 'Ontology Studio', icon: Workflow },
   { to: '/graph', label: 'Graph Explorer', icon: Share2 },
   { to: '/chat', label: 'Chat', icon: MessageSquare },
+  { to: '/discovery', label: 'Discovery', icon: Radar },
 ]
 
 const STATE_DOT: Record<BadgeState, string> = {
@@ -40,7 +42,7 @@ function HealthDot({ label, state, detail }: { label: string; state: BadgeState;
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { backendState, graphState, graphDetail } = useAppData()
+  const { backendState, graphState, graphDetail, pendingProposals } = useAppData()
 
   return (
     <div className="flex h-full flex-col">
@@ -72,6 +74,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           >
             <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
             {label}
+            {to === '/discovery' && pendingProposals > 0 && (
+              <span
+                className="ml-auto rounded-full bg-warning/15 px-1.5 text-[11px] font-semibold tabular-nums text-warning"
+                title={`${pendingProposals} ontology change proposal${pendingProposals === 1 ? '' : 's'} awaiting review`}
+              >
+                {pendingProposals}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -85,7 +95,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 /** App-wide shell: a fixed sidebar for navigation between pages (Overview,
- * Sources, Ontology Studio, Graph Explorer, Chat) plus the content outlet.
+ * Sources, Ontology Studio, Graph Explorer, Chat, Discovery) plus the content outlet.
  * Replaces the old App.tsx's single scrolling column of stacked panels --
  * per docs/UI_REHAUL_PLAN.md, each of those panels is now its own route. */
 export function AppShell() {

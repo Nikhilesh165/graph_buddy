@@ -1,14 +1,24 @@
 import type {
   ChatTurn,
+  ConsolidationRun,
+  Conversation,
+  DiscoveryEvent,
+  DiscoverySettings,
   EntityType,
   ExtractionResult,
   GraphFilters,
   GraphQueryResult,
+  MemoryOverview,
   NodeDetail,
+  OntologyChangeProposal,
   OntologyVersion,
+  ProposalDecision,
+  ProposalStatus,
   RelationType,
   RetrievalTrace,
+  SourceDiscoveryResult,
   SourceRead,
+  VocabularyEntry,
 } from '../types'
 
 const API_BASE_URL: string =
@@ -128,14 +138,61 @@ export function getGraphNode(uuid: string): Promise<NodeDetail> {
   return getJson<NodeDetail>(`/graph/nodes/${encodeURIComponent(uuid)}`)
 }
 
-export function getChatHistory(): Promise<ChatTurn[]> {
-  return getJson<ChatTurn[]>('/chat/history')
+export function getChatHistory(conversationId?: string): Promise<ChatTurn[]> {
+  const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : ''
+  return getJson<ChatTurn[]>(`/chat/history${query}`)
 }
 
-export function askChat(question: string): Promise<ChatTurn> {
-  return postJson<ChatTurn>('/chat', { question })
+/** Omit `conversationId` to start a new conversation -- the returned turn
+ * carries the id it was filed under. */
+export function askChat(question: string, conversationId?: string | null): Promise<ChatTurn> {
+  return postJson<ChatTurn>('/chat', { question, conversation_id: conversationId ?? null })
+}
+
+export function listConversations(): Promise<Conversation[]> {
+  return getJson<Conversation[]>('/chat/conversations')
 }
 
 export function getRetrievalTrace(turnId: string): Promise<RetrievalTrace> {
   return getJson<RetrievalTrace>(`/chat/${encodeURIComponent(turnId)}/trace`)
+}
+
+// --- Discovery cycle (docs/MEMORY_AND_DISCOVERY.md §3) ---
+
+export function getDiscoveryFeed(limit = 50): Promise<DiscoveryEvent[]> {
+  return getJson<DiscoveryEvent[]>(`/discovery/feed?limit=${limit}`)
+}
+
+export function listProposals(status?: ProposalStatus): Promise<OntologyChangeProposal[]> {
+  return getJson<OntologyChangeProposal[]>(`/discovery/proposals${status ? `?status=${status}` : ''}`)
+}
+
+export function acceptProposal(id: string): Promise<ProposalDecision> {
+  return postJson<ProposalDecision>(`/discovery/proposals/${encodeURIComponent(id)}/accept`, {})
+}
+
+export function rejectProposal(id: string): Promise<ProposalDecision> {
+  return postJson<ProposalDecision>(`/discovery/proposals/${encodeURIComponent(id)}/reject`, {})
+}
+
+export function discoverSource(sourceId: string): Promise<SourceDiscoveryResult> {
+  return postJson<SourceDiscoveryResult>(`/discovery/sources/${encodeURIComponent(sourceId)}`, {})
+}
+
+export function getDiscoverySettings(): Promise<DiscoverySettings> {
+  return getJson<DiscoverySettings>('/discovery/settings')
+}
+
+// --- Memory (docs/MEMORY_AND_DISCOVERY.md §2) ---
+
+export function getMemoryOverview(): Promise<MemoryOverview> {
+  return getJson<MemoryOverview>('/memory/overview')
+}
+
+export function getVocabulary(): Promise<VocabularyEntry[]> {
+  return getJson<VocabularyEntry[]>('/memory/vocabulary')
+}
+
+export function consolidateMemory(): Promise<ConsolidationRun> {
+  return postJson<ConsolidationRun>('/memory/consolidate', {})
 }

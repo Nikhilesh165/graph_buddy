@@ -2,6 +2,7 @@
 
 export type SourceStatus = 'uploaded' | 'parsed' | 'failed'
 export type GraphitiStatus = 'not_extracted' | 'extracting' | 'extracted' | 'failed'
+export type DiscoveryStatus = 'not_run' | 'pending' | 'running' | 'completed' | 'failed'
 
 export type SourceRead = {
   id: string
@@ -20,6 +21,9 @@ export type SourceRead = {
   node_count: number
   edge_count: number
   extracted_at: string | null
+  extracted_ontology_version: number | null
+  discovery_status: DiscoveryStatus
+  discovery_error: string | null
 }
 
 export type SampleFact = {
@@ -65,7 +69,7 @@ export type OntologyDiff = {
   modified_relation_types: string[]
 }
 
-export type OntologyVersionSource = 'bootstrap' | 'user_edit'
+export type OntologyVersionSource = 'bootstrap' | 'user_edit' | 'discovery'
 
 export type OntologyVersion = {
   id: string
@@ -76,6 +80,7 @@ export type OntologyVersion = {
   source_id: string | null
   diff: OntologyDiff | null
   created_at: string
+  note: string | null
 }
 
 // Mirrors backend/app/api/routes/graph.py's *Read shapes (Phase 3: Graph
@@ -140,8 +145,41 @@ export type NodeDetail = {
 }
 
 // Mirrors backend/app/api/routes/chat.py's *Read shapes (Phase 4: chat +
-// retrieval). Like ChatTurn on the backend, this is an append-only
-// transcript, not a threaded multi-conversation model.
+// retrieval), now threaded into conversations with episodic memory and
+// ontology-aware query resolution (docs/MEMORY_AND_DISCOVERY.md §2).
+
+export type QueryIntent = 'lookup' | 'relationship' | 'aggregate' | 'overview' | 'temporal' | 'comparison'
+
+export type EntityMention = {
+  name: string
+  entity_type: string | null
+}
+
+export type TermMapping = {
+  term: string
+  kind: 'entity_type' | 'relation_type'
+  maps_to: string
+}
+
+export type QueryPlan = {
+  standalone_query: string
+  intent: QueryIntent
+  entity_types: string[]
+  relation_types: string[]
+  entity_mentions: EntityMention[]
+  term_mappings: TermMapping[]
+  unmapped_terms: string[]
+  uses_conversation_context: boolean
+}
+
+export type Conversation = {
+  id: string
+  title: string
+  summary: string
+  turn_count: number
+  created_at: string
+  updated_at: string
+}
 
 export type ChatCitation = {
   index: number
@@ -157,6 +195,8 @@ export type ChatTurn = {
   citations: ChatCitation[]
   retrieved_count: number
   created_at: string
+  conversation_id: string | null
+  query_plan: QueryPlan | null
 }
 
 // Mirrors the retrieval-trace shapes in backend/app/api/routes/chat.py
@@ -178,6 +218,29 @@ export type TracedFact = {
   score: number
   source_node_uuid: string
   target_node_uuid: string
+  ontology_match: boolean
+}
+
+export type TraceResolution = {
+  plan: QueryPlan
+  edge_types: string[]
+  node_labels: string[]
+  anchors: { uuid: string; name: string; type: string }[]
+  error: string | null
+}
+
+export type TraceMemory = {
+  conversation_summary: string
+  working_turns: { turn_id: string; question: string }[]
+  recalled: { turn_id: string; question: string; score: number; reason: string }[]
+  vocabulary: { term: string; maps_to: string }[]
+}
+
+export type TracedCommunity = {
+  uuid: string
+  name: string
+  summary: string
+  score: number
 }
 
 export type RetrievalTrace = {
@@ -187,4 +250,131 @@ export type RetrievalTrace = {
   facts: TracedFact[]
   final_context: string
   created_at: string
+  // Null for traces recorded before query resolution and memory existed.
+  resolution: TraceResolution | null
+  memory: TraceMemory | null
+  communities: TracedCommunity[]
+}
+
+// Mirrors backend/app/models/discovery.py (the AI discovery cycle) and
+// backend/app/models/memory.py (periodic consolidation).
+
+export type ChangeOp =
+  | 'add_entity_type'
+  | 'add_relation_type'
+  | 'add_entity_property'
+  | 'add_relation_property'
+  | 'extend_relation_endpoints'
+  | 'update_description'
+  | 'rename_entity_type'
+  | 'rename_relation_type'
+  | 'remove_entity_type'
+  | 'remove_relation_type'
+
+export type RiskLevel = 'low' | 'medium' | 'high'
+
+export type OntologyChange = {
+  op: ChangeOp
+  target: string
+  entity_type: EntityType | null
+  relation_type: RelationType | null
+  property_def: PropertyDef | null
+  source_types: string[]
+  target_types: string[]
+  new_name: string | null
+  description: string | null
+  rationale: string
+}
+
+export type Evidence = {
+  quote: string
+  origin: string
+}
+
+export type ProposalStatus = 'pending' | 'applied' | 'rejected' | 'failed'
+
+export type OntologyChangeProposal = {
+  id: string
+  status: ProposalStatus
+  trigger: 'source' | 'conversation' | 'manual'
+  source_id: string | null
+  base_version_number: number
+  summary: string
+  changes: OntologyChange[]
+  evidence: Evidence[]
+  risk: RiskLevel
+  auto_applied: boolean
+  resulting_version_id: string | null
+  error: string | null
+  created_at: string
+  decided_at: string | null
+}
+
+export type ProposalDecision = {
+  proposal: OntologyChangeProposal
+  ontology: OntologyVersion
+}
+
+export type SourceDiscoveryResult = {
+  source: SourceRead
+  ontology: OntologyVersion
+  applied: OntologyChangeProposal | null
+  pending: OntologyChangeProposal | null
+  skipped: string[]
+}
+
+export type DiscoveryEventKind =
+  | 'ontology_bootstrapped'
+  | 'ontology_evolved'
+  | 'proposal_pending'
+  | 'proposal_accepted'
+  | 'proposal_rejected'
+  | 'source_analyzed'
+  | 'discovery_failed'
+  | 'consolidation_digest'
+
+export type DiscoveryEvent = {
+  id: string
+  kind: DiscoveryEventKind
+  title: string
+  body: string
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export type OntologyAutonomy = 'manual' | 'assisted' | 'autonomous'
+
+export type DiscoverySettings = {
+  ontology_autonomy: OntologyAutonomy
+  auto_discover_on_upload: boolean
+  auto_extract_on_upload: boolean
+  consolidation_interval_minutes: number
+}
+
+export type ConsolidationRun = {
+  id: string
+  trigger: 'schedule' | 'manual'
+  status: 'running' | 'completed' | 'failed'
+  started_at: string
+  finished_at: string | null
+  stats: Record<string, unknown>
+  digest: string
+  error: string | null
+}
+
+export type VocabularyEntry = {
+  term: string
+  kind: 'entity_type' | 'relation_type'
+  maps_to: string
+  hits: number
+  last_seen_at: string
+}
+
+export type MemoryOverview = {
+  conversations: number
+  episodes: number
+  vocabulary_terms: number
+  pending_proposals: number
+  consolidation_interval_minutes: number
+  last_run: ConsolidationRun | null
 }

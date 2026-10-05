@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Circle,
   MessageSquare,
+  Radar,
   Share2,
   UploadCloud,
   Workflow,
@@ -37,13 +38,14 @@ type QuickLink = {
 
 const QUICK_LINKS: QuickLink[] = [
   { to: '/sources', icon: UploadCloud, title: 'Add a source', description: 'Upload a doc, sheet, or transcript to feed the graph.' },
-  { to: '/ontology', icon: Workflow, title: 'Shape the ontology', description: 'Review or edit the entity & relation types the graph uses.' },
+  { to: '/ontology', icon: Workflow, title: 'Shape the ontology', description: 'See the entity & relation types the AI derived, or edit them directly.' },
   { to: '/graph', icon: Share2, title: 'Explore the graph', description: 'Filter, search, and inspect nodes visually.' },
   { to: '/chat', icon: MessageSquare, title: 'Ask a question', description: 'Chat over your data with cited, inspectable answers.' },
+  { to: '/discovery', icon: Radar, title: 'Review discovery', description: 'Accept or dismiss ontology changes the AI proposed, and see what memory learned.' },
 ]
 
 export function DashboardPage() {
-  const { ontology, backendState, graphState } = useAppData()
+  const { ontology, backendState, graphState, pendingProposals } = useAppData()
   const [sources, setSources] = useState<SourceRead[] | null>(null)
   const [chatTurnCount, setChatTurnCount] = useState<number | null>(null)
 
@@ -64,7 +66,7 @@ export function DashboardPage() {
 
   const steps = [
     { done: (sources?.length ?? 0) > 0, label: 'Upload a source', to: '/sources' },
-    { done: hasOntology, label: 'Bootstrap or define an ontology', to: '/sources' },
+    { done: hasOntology, label: 'Let the AI derive an ontology (automatic on upload)', to: '/sources' },
     { done: extractedCount > 0, label: 'Extract a source into the graph', to: '/sources' },
     { done: (chatTurnCount ?? 0) > 0, label: 'Ask your first question', to: '/chat' },
   ]
@@ -116,12 +118,16 @@ export function DashboardPage() {
         <StatCard
           label="Ontology"
           value={hasOntology ? `v${ontology!.version_number}` : '—'}
-          hint={hasOntology ? `${ontology!.entity_types.length} entity types` : 'not bootstrapped yet'}
+          hint={
+            hasOntology
+              ? `${ontology!.entity_types.length} entity types${pendingProposals ? ` · ${pendingProposals} to review` : ''}`
+              : 'derived on first upload'
+          }
         />
       </div>
 
       <h2 className="mb-3 text-sm font-semibold text-foreground">Quick actions</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {QUICK_LINKS.map(({ to, icon: Icon, title, description }) => (
           <Link key={to} to={to} className="group">
             <Card className="h-full transition-shadow hover:shadow-md">

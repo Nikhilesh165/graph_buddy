@@ -88,9 +88,14 @@ export function OntologyStudio({ ontology, onSaved }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Badge variant="outline">version {ontology.version_number || '—'}</Badge>
-        {ontology.created_by && ontology.version_number > 0 && <span>via {ontology.created_by}</span>}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Badge variant="outline">version {ontology.version_number || '—'}</Badge>
+          {ontology.created_by && ontology.version_number > 0 && (
+            <span>{ontology.created_by === 'discovery' ? 'via AI discovery' : `via ${ontology.created_by.replace('_', ' ')}`}</span>
+          )}
+        </div>
+        {ontology.note && <p className="text-sm text-muted-foreground">{ontology.note}</p>}
       </div>
 
       {diffHasChanges && diff && (

@@ -11,7 +11,7 @@ export function OntologyPage() {
     <div>
       <PageHeader
         title="Ontology Studio"
-        description="The entity and relation types the graph is structured around -- edit them directly, or let extraction propose changes."
+        description="The entity and relation types the graph is structured around. The AI discovery cycle maintains them as data and conversations arrive -- review its proposals in Discovery, or edit directly here."
       />
       {ontology ? (
         <OntologyStudio key={ontology.id} ontology={ontology} onSaved={setOntology} />
@@ -19,7 +19,7 @@ export function OntologyPage() {
         <EmptyState
           icon={Workflow}
           title="No ontology yet"
-          description="Upload a source and bootstrap an ontology from it to get started."
+          description="Upload a source -- the AI derives a starting ontology from it automatically."
         />
       )}
     </div>
