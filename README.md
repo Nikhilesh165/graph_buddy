@@ -2,7 +2,7 @@
 
 An application that builds a **knowledge graph + ontology layer** from your uploaded data (and, later, connected data warehouses), backed by an **episodic/semantic memory system** with a background **data discovery cycle** that learns from your conversations — with a UI to **visualize the graph** and **inspect the retrieval process** behind every answer.
 
-This repo is at the planning stage. See [`docs/VISION.md`](docs/VISION.md) for why this is worth building, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design, and [`docs/ROADMAP.md`](docs/ROADMAP.md) for the phased build plan.
+See [`docs/VISION.md`](docs/VISION.md) for why this is worth building, [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the system design, [`docs/ROADMAP.md`](docs/ROADMAP.md) for the phased build plan, and [`docs/MEMORY_AND_DISCOVERY.md`](docs/MEMORY_AND_DISCOVERY.md) for the chatbot's memory, ontology-aware query resolution, and the AI-driven ontology discovery cycle.
 
 ## Decisions locked in for the MVP
 
@@ -13,7 +13,7 @@ This repo is at the planning stage. See [`docs/VISION.md`](docs/VISION.md) for w
 
 ## Getting started
 
-Phases 0-5 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)) are built: a FastAPI backend wired to [Graphiti](https://github.com/getzep/graphiti)/Neo4j, file upload + per-type parsing (PDF/DOCX/CSV/TXT/MD) into a local SQLite store, an LLM ontology-bootstrap pass, ontology-guided extraction into Graphiti episodes (chunked, with a confidence score on every edge), and a React+TS frontend covering health status, Sources, Ontology Studio, the Graph Explorer, Chat, and the Retrieval Inspector.
+Phases 0-5 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)) are built, plus the first slice of Phases 6-7 (below): a FastAPI backend wired to [Graphiti](https://github.com/getzep/graphiti)/Neo4j, file upload + per-type parsing (PDF/DOCX/CSV/TXT/MD) into a local SQLite store, an LLM ontology-bootstrap pass, ontology-guided extraction into Graphiti episodes (chunked, with a confidence score on every edge), and a React+TS frontend covering health status, Sources, Ontology Studio, the Graph Explorer, Chat, and the Retrieval Inspector.
 
 ```sh
 cp .env.example .env        # fill in OPENAI_API_KEY (inference + embeddings, see ARCHITECTURE.md §5)
@@ -27,6 +27,8 @@ npm run dev                            # http://localhost:5173
 ```
 
 The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `GET /health/graph`. The backend boots even without Neo4j or an API key configured — `/health/graph` reports the specific error instead of the app crashing, and uploading a source + bootstrapping an ontology work independently of Graphiti/Neo4j entirely (see `docs/ARCHITECTURE.md` §3.1–3.2). Extraction and chat do need a reachable Neo4j and `OPENAI_API_KEY` — they return a clean 503/502 rather than crashing when those aren't available.
+
+On top of that, the ontology is now **AI-maintained** and the chatbot has **memory** (details in [`docs/MEMORY_AND_DISCOVERY.md`](docs/MEMORY_AND_DISCOVERY.md)): every upload runs a background discovery pass that bootstraps or evolves the ontology under a configurable autonomy policy (`ONTOLOGY_AUTONOMY`, default `autonomous` -- renames/removals always wait for review in the Discovery page); chat is threaded into conversations, and each question is resolved against the ontology, working memory, recalled past episodes and learned vocabulary before typed + open retrieval; and a periodic consolidation cycle summarizes conversations, mines ontology gaps from what users ask, rebuilds community summaries, and writes a digest to the Discovery Feed.
 
 Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API key required — Graphiti and every LLM call are mocked).
 

@@ -62,7 +62,7 @@ Graphiti is a temporal knowledge graph library built for exactly this shape of p
 - **Hybrid search** (semantic + BM25 + graph traversal) out of the box, which becomes the base of the retrieval engine.
 
 Mapping onto the requested memory model:
-- **Episodic memory** = Graphiti episodes: one per ingested chunk, one per conversation turn. Immutable, timestamped, provenance-attached.
+- **Episodic memory** = Graphiti episodes: one per ingested chunk. Immutable, timestamped, provenance-attached. Conversation turns are episodes too, but in the chatbot's own episodic store (SQLite, with embeddings and links to the graph entities each turn touched) rather than in Graphiti -- re-ingesting answers derived from graph facts would inflate those facts' corroboration-based confidence in a loop. See `MEMORY_AND_DISCOVERY.md` §2.2.
 - **Semantic memory** = the resolved entity/relation graph Graphiti maintains from those episodes — the "current understanding."
 - **Periodic memory (consolidation)** = a scheduled job (nightly, or every N new episodes) that:
   1. Runs community detection (Leiden) over the graph and writes/updates community-summary nodes (GraphRAG-style), so broad questions don't require expanding thousands of edges.
@@ -91,10 +91,11 @@ Runs after each conversation (and optionally on a schedule):
 4. Auto-apply low-risk additive changes (e.g. a new property on an existing type); queue structural changes (new entity type, renamed relation) for human review in the Discovery Feed.
 5. On acceptance, backfill: re-run extraction over historical episodes that are now in-scope for the new schema element.
 
-This is the "learns from your conversations about your data" piece — it's explicitly a proposal/review loop, not silent auto-mutation of the ontology, to keep the graph trustworthy.
+This is the "learns from your conversations about your data" piece — it's explicitly a proposal/review loop, not silent auto-mutation of the ontology, to keep the graph trustworthy. What counts as "low-risk" is a configurable autonomy policy (manual / assisted / autonomous), and the same cycle also runs on every upload, so the ontology is AI-maintained from the first file onward rather than a one-time setup step -- see `MEMORY_AND_DISCOVERY.md` §3.
 
 ### 3.6 Retrieval + retrieval trace
 - Hybrid retrieval: entity/vector search to find seed nodes → k-hop graph traversal → optionally pull in community summaries for broad/aggregate questions → rerank → assemble context.
+- Before retrieval, each question is resolved against the ontology and conversation memory (standalone rewrite, intent, entity/relation types, anchored entities); grounded types drive filtered edge/node searches whose results rank ahead of the open search. See `MEMORY_AND_DISCOVERY.md` §2.3.
 - **Every retrieval produces a trace object**, stored (not just logged): seed nodes + scores, each expansion hop with the edges traversed and why, nodes/edges actually included in the final context, final prompt.
 - Each fact in the trace carries its current confidence score (§3.7) — retrieval can rank/filter by it, and the Inspector can show *why* a low-corroboration fact was still used.
 - This trace is a first-class artifact the UI reads — see below.

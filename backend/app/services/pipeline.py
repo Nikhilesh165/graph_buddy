@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.config import Settings
 from app.core.db import session_scope
@@ -24,6 +24,31 @@ from app.models.source import Source
 from app.services import discovery_service, extraction_service, ontology_service
 
 logger = logging.getLogger(__name__)
+
+INTERRUPTED = "Interrupted by a server restart -- run it again."
+
+
+def recover_interrupted_jobs(session: Session) -> int:
+    """Background work lives in this process, so a restart mid-pass leaves
+    its source row claiming to still be "running" -- and the Sources page
+    would poll it forever. Called at startup: anything still in flight then
+    was interrupted, so mark it failed (retryable from the UI)."""
+    stuck = session.exec(
+        select(Source).where(
+            Source.discovery_status.in_(["pending", "running"])  # type: ignore[attr-defined]
+            | (Source.graphiti_status == "extracting")
+        )
+    ).all()
+    for source in stuck:
+        if source.discovery_status in ("pending", "running"):
+            source.discovery_status = "failed"
+            source.discovery_error = INTERRUPTED
+        if source.graphiti_status == "extracting":
+            source.graphiti_status = "failed"
+            source.graphiti_error = INTERRUPTED
+        session.add(source)
+    session.commit()
+    return len(stuck)
 
 
 async def run_source_discovery_job(

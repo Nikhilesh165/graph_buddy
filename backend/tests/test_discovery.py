@@ -384,3 +384,45 @@ def test_suggestions_already_awaiting_review_are_not_queued_twice(
     latest = client.get("/discovery/feed").json()[0]
     assert latest["kind"] == "source_analyzed"
     assert "awaiting review" in latest["title"]
+
+
+def test_jobs_interrupted_by_a_restart_are_marked_failed(client: TestClient) -> None:
+    from sqlmodel import Session
+
+    from app.core import db
+    from app.models.source import Source
+    from app.services.pipeline import recover_interrupted_jobs
+
+    with Session(db._engine) as session:
+        session.add(
+            Source(
+                id="stuck",
+                filename="a.txt",
+                content_type="text/plain",
+                file_path="/x",
+                size_bytes=1,
+                status="parsed",
+                discovery_status="running",
+                graphiti_status="extracting",
+            )
+        )
+        session.add(
+            Source(
+                id="done",
+                filename="b.txt",
+                content_type="text/plain",
+                file_path="/x",
+                size_bytes=1,
+                status="parsed",
+                discovery_status="completed",
+            )
+        )
+        session.commit()
+
+        assert recover_interrupted_jobs(session) == 1
+
+    stuck = client.get("/sources/stuck").json()
+    assert stuck["discovery_status"] == "failed"
+    assert "restart" in stuck["discovery_error"]
+    assert stuck["graphiti_status"] == "failed"
+    assert client.get("/sources/done").json()["discovery_status"] == "completed"

@@ -16,7 +16,7 @@ from app.core.config import get_settings
 from app.core.db import create_db_and_tables, init_engine, session_scope
 from app.core.graphiti_client import GraphitiState
 from app.core.scheduler import PeriodicTask
-from app.services import consolidation_service, memory_service
+from app.services import consolidation_service, memory_service, pipeline
 
 
 @asynccontextmanager
@@ -32,6 +32,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Chat turns from before conversations existed -> one "Earlier
         # questions" conversation (see memory_service.adopt_orphan_turns).
         memory_service.adopt_orphan_turns(session)
+        # Background passes that a restart cut short (see pipeline.py).
+        pipeline.recover_interrupted_jobs(session)
 
     graphiti_state = GraphitiState(settings)
     await graphiti_state.startup()

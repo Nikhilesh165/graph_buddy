@@ -36,6 +36,8 @@ Each phase should end with something demoable, not just "code exists." Ordered b
 - **Demo:** ask a question, then open "explain this answer" and see exactly which nodes/edges/hops produced it and how confident each fact was.
 
 ## Phase 6 — Memory consolidation
+> **Status:** partly built -- scheduled consolidation cycle with conversation summaries, community rebuilds, gap mining and the change digest (+ chat working/episodic memory and ontology-aware query resolution, which this phase's plan didn't originally include). Confidence recomputation, contradiction flagging and retention are still open. See `docs/MEMORY_AND_DISCOVERY.md` §2.4 and §5.
+
 - Scheduled community-detection + summary job.
 - Confidence recomputation — corroboration raises it, contradictions and staleness lower it (ARCHITECTURE.md §3.7).
 - Contradiction flagging.
@@ -44,6 +46,8 @@ Each phase should end with something demoable, not just "code exists." Ordered b
 - **Demo:** after enough data, broad questions get answered from community summaries instead of huge context dumps; conflicting facts show up flagged; opening the feed shows this cycle's digest in plain language.
 
 ## Phase 7 — Discovery cycle
+> **Status:** largely built -- discovery from every upload (bootstrap/evolve) and from conversation gaps, op-based change sets under an autonomy policy, Discovery Feed with accept/reject. Backfill on acceptance and graph migration for renames/removals are still open. See `docs/MEMORY_AND_DISCOVERY.md` §3 and §5.
+
 - Post-conversation scan → ontology diff proposals with evidence.
 - Discovery Feed UI: accept/reject queue for ontology proposals, unified with the change digests Phase 6 already writes to the same feed — auto-apply for low-risk additive changes.
 - Backfill extraction on ontology acceptance.
