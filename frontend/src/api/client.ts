@@ -19,12 +19,28 @@ export type HealthStatus = {
   detail?: string
 }
 
+/** FastAPI's `detail` is a string for HTTPExceptions but a list of
+ * `{loc, msg}` objects for request-validation 422s -- interpolating the
+ * latter straight into a message rendered "[object Object]". */
+function formatDetail(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item: { loc?: unknown[]; msg?: string }) => {
+        const field = item.loc?.filter((part) => part !== 'body').join('.')
+        return field ? `${field}: ${item.msg ?? ''}` : (item.msg ?? JSON.stringify(item))
+      })
+      .join('; ')
+  }
+  return detail === undefined || detail === null ? '' : JSON.stringify(detail)
+}
+
 async function unwrap<T>(response: Response, path: string): Promise<T> {
   if (!response.ok) {
     let detail = ''
     try {
-      const body = (await response.json()) as { detail?: string }
-      detail = body.detail ?? ''
+      const body = (await response.json()) as { detail?: unknown }
+      detail = formatDetail(body.detail)
     } catch {
       // body wasn't JSON -- fall through with just the status
     }

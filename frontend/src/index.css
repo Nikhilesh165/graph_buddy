@@ -154,15 +154,8 @@
 }
 
 @layer utilities {
-  /* Force-graph draws into a plain <canvas> it sizes itself -- this just
-     keeps its wrapper from ever introducing horizontal scroll on narrow
-     viewports. */
-  .graph-canvas-wrap canvas {
-    max-width: 100%;
-  }
-
-  /* Sheet.tsx's enter transitions -- hand-rolled instead of pulling in
-     tailwindcss-animate for two keyframes. */
+  /* Sheet.tsx's and the mobile nav's enter transitions -- hand-rolled
+     instead of pulling in tailwindcss-animate for three keyframes. */
   @keyframes fade-in {
     from {
       opacity: 0;
@@ -181,5 +174,16 @@
 
   .animate-slide-in-right {
     animation: slide-in-from-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* The mobile nav drawer is pinned left, so it enters from the left. */
+  @keyframes slide-in-from-left {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+
+  .animate-slide-in-left {
+    animation: slide-in-from-left 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 }

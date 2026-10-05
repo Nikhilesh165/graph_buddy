@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Search } from 'lucide-react'
 import { getGraph } from '../api/client'
 import { CONFIDENCE_STEP } from '../lib/confidence'
@@ -27,6 +27,10 @@ export function GraphExplorer({ ontology }: Props) {
   )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Every filter change (each slider step while dragging) fires a request,
+  // and they can resolve out of order -- only the latest may write state, or
+  // a stale result ends up on screen under the current filters.
+  const requestId = useRef(0)
 
   // Debounce free-text search so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -35,6 +39,7 @@ export function GraphExplorer({ ontology }: Props) {
   }, [searchInput])
 
   async function loadGraph() {
+    const id = ++requestId.current
     setLoading(true)
     setError(null)
     try {
@@ -43,11 +48,11 @@ export function GraphExplorer({ ontology }: Props) {
         minConfidence,
         search: search || undefined,
       })
-      setData(result)
+      if (id === requestId.current) setData(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load graph')
+      if (id === requestId.current) setError(err instanceof Error ? err.message : 'Failed to load graph')
     } finally {
-      setLoading(false)
+      if (id === requestId.current) setLoading(false)
     }
   }
 
@@ -78,6 +83,7 @@ export function GraphExplorer({ ontology }: Props) {
   }
 
   const noneSelected = selectedTypes.length === 0
+  const filtersActive = !noneSelected || minConfidence > 0 || search !== ''
 
   return (
     <div className="flex flex-col gap-4">
@@ -151,7 +157,11 @@ export function GraphExplorer({ ontology }: Props) {
           edges={data?.edges ?? []}
           entityTypeOrder={entityTypeOrder}
           emptyMessage={
-            loading ? 'Loading graph…' : 'No graph data yet — extract a source into the graph first.'
+            loading
+              ? 'Loading graph…'
+              : filtersActive
+                ? 'No facts match the current filters.'
+                : 'No graph data yet — extract a source into the graph first.'
           }
           height={620}
         />

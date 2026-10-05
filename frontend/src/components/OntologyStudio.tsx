@@ -34,6 +34,44 @@ function csvToList(value: string): string[] {
     .filter(Boolean)
 }
 
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
+}
+
+/** Comma-separated list input that keeps its own draft text. Deriving the
+ * displayed value from the parsed list (`list.join(', ')`) erased a comma
+ * the instant it was typed -- `csvToList('Person,')` is just `['Person']`
+ * -- so a second type could never be entered by typing. */
+function ListInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string[]
+  onChange: (next: string[]) => void
+  placeholder: string
+}) {
+  const [draft, setDraft] = useState(() => value.join(', '))
+  // Re-sync when the list changes from outside rather than from typing here
+  // (e.g. a card above was removed and index keys shifted). Both sides go
+  // through csvToList, so this settles after one extra render.
+  if (!sameList(csvToList(draft), csvToList(value.join(',')))) {
+    setDraft(value.join(', '))
+  }
+
+  return (
+    <Input
+      placeholder={placeholder}
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value)
+        onChange(csvToList(e.target.value))
+      }}
+      onBlur={() => setDraft(csvToList(draft).join(', '))}
+    />
+  )
+}
+
 function DiffLine({ label, names }: { label: string; names: string[] }) {
   if (names.length === 0) return null
   return (
@@ -219,15 +257,15 @@ export function OntologyStudio({ ontology, onSaved }: Props) {
                 className="mt-2 min-h-[44px]"
               />
               <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Input
+                <ListInput
                   placeholder="Source entity types (comma-separated)"
-                  value={rt.source_types.join(', ')}
-                  onChange={(e) => updateRelationType(i, { source_types: csvToList(e.target.value) })}
+                  value={rt.source_types}
+                  onChange={(source_types) => updateRelationType(i, { source_types })}
                 />
-                <Input
+                <ListInput
                   placeholder="Target entity types (comma-separated)"
-                  value={rt.target_types.join(', ')}
-                  onChange={(e) => updateRelationType(i, { target_types: csvToList(e.target.value) })}
+                  value={rt.target_types}
+                  onChange={(target_types) => updateRelationType(i, { target_types })}
                 />
               </div>
             </Card>

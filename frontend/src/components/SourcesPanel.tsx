@@ -26,6 +26,16 @@ const STATUS_BADGE: Record<SourceStatus, BadgeVariant> = {
   uploaded: 'warning',
 }
 
+function withId(ids: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  return new Set(ids).add(id)
+}
+
+function withoutId(ids: ReadonlySet<string>, id: string): ReadonlySet<string> {
+  const next = new Set(ids)
+  next.delete(id)
+  return next
+}
+
 const GRAPHITI_BADGE: Record<GraphitiStatus, BadgeVariant> = {
   extracted: 'success',
   extracting: 'warning',
@@ -37,8 +47,11 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
   const [sources, setSources] = useState<SourceRead[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
-  const [bootstrappingId, setBootstrappingId] = useState<string | null>(null)
-  const [extractingId, setExtractingId] = useState<string | null>(null)
+  // Sets, not a single id: two sources can be bootstrapping/extracting at
+  // once, and with one shared id the first to finish cleared the other's
+  // spinner and re-enabled its button mid-run.
+  const [bootstrappingIds, setBootstrappingIds] = useState<ReadonlySet<string>>(new Set())
+  const [extractingIds, setExtractingIds] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Avoids double-firing the auto-bootstrap if hasOntology hasn't re-rendered yet.
@@ -51,7 +64,7 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
   }, [])
 
   async function runBootstrap(sourceId: string) {
-    setBootstrappingId(sourceId)
+    setBootstrappingIds((ids) => withId(ids, sourceId))
     setError(null)
     try {
       const version = await bootstrapOntology(sourceId)
@@ -59,12 +72,17 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ontology bootstrap failed')
     } finally {
-      setBootstrappingId(null)
+      setBootstrappingIds((ids) => withoutId(ids, sourceId))
     }
   }
 
   async function runExtract(sourceId: string) {
-    setExtractingId(sourceId)
+    setExtractingIds((ids) => withId(ids, sourceId))
+    // Mirror the backend's own status while the (long) request runs, rather
+    // than leaving the row's badge reading "not extracted" until it returns.
+    setSources((prev) =>
+      prev.map((s) => (s.id === sourceId ? { ...s, graphiti_status: 'extracting', graphiti_error: null } : s)),
+    )
     setError(null)
     try {
       await extractSource(sourceId)
@@ -81,7 +99,7 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
       } catch {
         // best-effort refresh; the error banner already covers the failure
       }
-      setExtractingId(null)
+      setExtractingIds((ids) => withoutId(ids, sourceId))
     }
   }
 
@@ -171,59 +189,63 @@ export function SourcesPanel({ hasOntology, onOntologyChange }: Props) {
       ) : (
         <ul className="flex flex-col gap-2.5">
           {sources.map((source) => (
-            <Card key={source.id} className="px-4 py-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
-                  <span className="truncate font-mono text-sm text-foreground">{source.filename}</span>
+            <li key={source.id}>
+              <Card className="px-4 py-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                    <span className="truncate font-mono text-sm text-foreground">{source.filename}</span>
+                  </div>
+                  <Badge variant={STATUS_BADGE[source.status]}>{source.status}</Badge>
                 </div>
-                <Badge variant={STATUS_BADGE[source.status]}>{source.status}</Badge>
-              </div>
 
-              {source.status === 'failed' && (
-                <p className="mt-2 text-xs text-destructive">{source.parse_error}</p>
-              )}
+                {source.status === 'failed' && (
+                  <p className="mt-2 text-xs text-destructive">{source.parse_error}</p>
+                )}
 
-              {source.status === 'parsed' && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={bootstrappingId === source.id}
-                    onClick={() => void runBootstrap(source.id)}
-                  >
-                    {bootstrappingId === source.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Sparkles className="h-3.5 w-3.5" />
+                {source.status === 'parsed' && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={bootstrappingIds.has(source.id)}
+                      onClick={() => void runBootstrap(source.id)}
+                    >
+                      {bootstrappingIds.has(source.id) ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      Propose ontology
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={
+                        !hasOntology || extractingIds.has(source.id) || source.graphiti_status === 'extracting'
+                      }
+                      title={hasOntology ? undefined : 'Bootstrap or define an ontology first'}
+                      onClick={() => void runExtract(source.id)}
+                    >
+                      {extractingIds.has(source.id) ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Workflow className="h-3.5 w-3.5" />
+                      )}
+                      Extract into graph
+                    </Button>
+                    <Badge variant={GRAPHITI_BADGE[source.graphiti_status]} className="gap-1">
+                      {source.graphiti_status === 'extracted' && <CheckCircle2 className="h-3 w-3" />}
+                      {source.graphiti_status === 'extracted'
+                        ? `${source.node_count} nodes, ${source.edge_count} edges`
+                        : source.graphiti_status.replace('_', ' ')}
+                    </Badge>
+                    {source.graphiti_status === 'failed' && source.graphiti_error && (
+                      <span className="text-xs text-destructive">{source.graphiti_error}</span>
                     )}
-                    Propose ontology
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={!hasOntology || extractingId === source.id}
-                    title={hasOntology ? undefined : 'Bootstrap or define an ontology first'}
-                    onClick={() => void runExtract(source.id)}
-                  >
-                    {extractingId === source.id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Workflow className="h-3.5 w-3.5" />
-                    )}
-                    Extract into graph
-                  </Button>
-                  <Badge variant={GRAPHITI_BADGE[source.graphiti_status]} className="gap-1">
-                    {source.graphiti_status === 'extracted' && <CheckCircle2 className="h-3 w-3" />}
-                    {source.graphiti_status === 'extracted'
-                      ? `${source.node_count} nodes, ${source.edge_count} edges`
-                      : source.graphiti_status.replace('_', ' ')}
-                  </Badge>
-                  {source.graphiti_status === 'failed' && source.graphiti_error && (
-                    <span className="text-xs text-destructive">{source.graphiti_error}</span>
-                  )}
-                </div>
-              )}
-            </Card>
+                  </div>
+                )}
+              </Card>
+            </li>
           ))}
         </ul>
       )}

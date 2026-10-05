@@ -3,11 +3,13 @@ import { getGraphHealth, getHealth, getOntology } from '../api/client'
 import type { OntologyVersion } from '../types'
 import { AppDataContext, type AppData, type BadgeState } from './appDataContext'
 
+const HEALTH_POLL_INTERVAL_MS = 30_000
+
 /** Backend/graph-DB health checks and the current ontology version, lifted
  * out of the old single-page App.tsx so every page (Dashboard, Sources,
  * Ontology, Graph, Chat) can read/update the same ontology without
- * threading it through router props. Fetched once on mount, same as
- * before -- pages that mutate the ontology (Sources' auto-bootstrap,
+ * threading it through router props. The ontology is fetched once on
+ * mount (health is polled, see below) -- pages that mutate the ontology (Sources' auto-bootstrap,
  * Ontology Studio's save) call `setOntology` to push the new version back
  * in, same flow the old App.tsx used with local state. */
 export function AppDataProvider({ children }: { children: ReactNode }) {
@@ -17,20 +19,41 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [ontology, setOntology] = useState<OntologyVersion | null>(null)
 
   useEffect(() => {
-    getHealth()
-      .then(() => setBackendState('ok'))
-      .catch(() => setBackendState('unreachable'))
+    let cancelled = false
 
-    getGraphHealth()
-      .then((result) => {
-        setGraphState(result.status === 'ok' ? 'ok' : 'error')
-        setGraphDetail(result.detail)
-      })
-      .catch(() => setGraphState('unreachable'))
+    // Re-checked on an interval, not just once on mount: the backend's
+    // /health/graph is a live check precisely because Neo4j may come up
+    // after (or go down during) a session, and a one-shot fetch left the
+    // badges stuck on whatever they said at page load.
+    function checkHealth() {
+      getHealth()
+        .then(() => !cancelled && setBackendState('ok'))
+        .catch(() => !cancelled && setBackendState('unreachable'))
+
+      getGraphHealth()
+        .then((result) => {
+          if (cancelled) return
+          setGraphState(result.status === 'ok' ? 'ok' : 'error')
+          setGraphDetail(result.detail)
+        })
+        .catch(() => {
+          if (cancelled) return
+          setGraphState('unreachable')
+          setGraphDetail(undefined)
+        })
+    }
+
+    checkHealth()
+    const timer = setInterval(checkHealth, HEALTH_POLL_INTERVAL_MS)
 
     getOntology()
-      .then(setOntology)
-      .catch(() => setOntology(null))
+      .then((version) => !cancelled && setOntology(version))
+      .catch(() => !cancelled && setOntology(null))
+
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   }, [])
 
   const entityTypeOrder = useMemo(() => ontology?.entity_types.map((et) => et.name) ?? [], [ontology])

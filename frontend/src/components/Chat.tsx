@@ -86,13 +86,15 @@ export function Chat({ onExplain }: Props) {
             {turns.map((turn) => (
               <div key={turn.id} className="flex flex-col gap-2">
                 <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-secondary px-3.5 py-2 text-sm text-secondary-foreground">
+                  <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-secondary px-3.5 py-2 text-sm text-secondary-foreground">
                     {turn.question}
                   </div>
                 </div>
                 <div className="flex justify-start">
                   <div className="max-w-[92%] rounded-2xl rounded-tl-sm border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground">
-                    {turn.answer}
+                    {/* pre-wrap: answers routinely contain line breaks and lists,
+                        which plain text rendering collapsed into one run-on line. */}
+                    <p className="whitespace-pre-wrap break-words">{turn.answer}</p>
                     <TurnCitations citations={turn.citations} />
                     {turn.retrieved_count > 0 && (
                       <button
@@ -124,7 +126,9 @@ export function Chat({ onExplain }: Props) {
             disabled={asking}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              // isComposing: Enter also confirms an IME candidate (CJK input);
+              // that keystroke must not send a half-typed question.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 void handleAsk()
               }

@@ -48,6 +48,25 @@ export function GraphCanvas({
 }: Props) {
   const mode = useThemeMode()
   const fgRef = useRef<ForceGraphMethods<NodeObject<NodeDatum>, never> | undefined>(undefined)
+  // Guards openNode against out-of-order responses: only the most recent
+  // click may write the detail panel.
+  const nodeRequestId = useRef(0)
+
+  // force-graph sizes its canvas to `window.innerWidth` unless told
+  // otherwise, which overflowed this (narrower) container: the graph's
+  // center sat off-screen to the right and fit-to-view fit the invisible
+  // canvas. Track the container's real width instead. A callback ref (not
+  // useRef) because the container only mounts once there are nodes.
+  const [container, setContainer] = useState<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState<number | undefined>(undefined)
+  useEffect(() => {
+    if (!container) return
+    // Fires once immediately on observe(), then on every resize.
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)))
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [container])
+  const canvasReady = width !== undefined && width > 0
 
   // Deliberately *not* reset when `nodes`/`edges` change (e.g. a filter
   // tweak in GraphExplorer): a still-present selection stays open across a
@@ -79,25 +98,30 @@ export function GraphCanvas({
     return Array.from(names)
   }, [nodes])
 
-  const graphData = useMemo(
-    () => ({
+  const graphData = useMemo(() => {
+    // force-graph throws ("node not found") on a link whose endpoint isn't
+    // in `nodes`, unmounting the whole app -- e.g. a retrieval trace whose
+    // fact endpoint couldn't be looked up. Drop such links instead.
+    const nodeIds = new Set(nodes.map((n) => n.uuid))
+    return {
       nodes: nodes.map((n) => ({ id: n.uuid, name: n.name, type: n.type })),
       // `pairKey` is order-independent (A->B and B->A share one key) so
       // linkCurvature below can detect and curve apart edges that share a
       // node pair -- straight, overlapping lines would otherwise be
       // indistinguishable.
-      links: edges.map((e) => ({
-        uuid: e.uuid,
-        source: e.source,
-        target: e.target,
-        name: e.name,
-        fact: e.fact,
-        confidence: e.confidence,
-        pairKey: [e.source, e.target].sort().join('|'),
-      })),
-    }),
-    [nodes, edges],
-  )
+      links: edges
+        .filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target))
+        .map((e) => ({
+          uuid: e.uuid,
+          source: e.source,
+          target: e.target,
+          name: e.name,
+          fact: e.fact,
+          confidence: e.confidence,
+          pairKey: [e.source, e.target].sort().join('|'),
+        })),
+    }
+  }, [nodes, edges])
 
   const pairCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -118,20 +142,25 @@ export function GraphCanvas({
     if (link) link.distance(70)
     fg.d3Force('collide', forceCollide(NODE_RADIUS + 6))
     fg.d3ReheatSimulation()
-  }, [graphData])
+    // canvasReady: the ForceGraph2D (and so fgRef) only mounts once the
+    // container width is known, after the first graphData render.
+  }, [graphData, canvasReady])
 
   async function openNode(uuid: string) {
+    const requestId = ++nodeRequestId.current
     setSelectedNodeUuid(uuid)
     setNodeDetail(null)
     setNodeDetailError(null)
     setNodeDetailLoading(true)
     try {
       const detail = await getGraphNode(uuid)
-      setNodeDetail(detail)
+      if (requestId === nodeRequestId.current) setNodeDetail(detail)
     } catch (err) {
-      setNodeDetailError(err instanceof Error ? err.message : 'Failed to load node')
+      if (requestId === nodeRequestId.current) {
+        setNodeDetailError(err instanceof Error ? err.message : 'Failed to load node')
+      }
     } finally {
-      setNodeDetailLoading(false)
+      if (requestId === nodeRequestId.current) setNodeDetailLoading(false)
     }
   }
 
@@ -152,7 +181,11 @@ export function GraphCanvas({
   return (
     <>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-gradient-to-b from-transparent to-accent/20">
+        <div
+          ref={setContainer}
+          className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-gradient-to-b from-transparent to-accent/20"
+          style={{ height }}
+        >
           <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
             <Button size="icon" variant="outline" aria-label="Zoom in" className="bg-card/90 backdrop-blur" onClick={() => zoomBy(1.4)}>
               <ZoomIn className="h-4 w-4" />
@@ -165,98 +198,101 @@ export function GraphCanvas({
             </Button>
           </div>
 
-          <ForceGraph2D<NodeDatum, LinkDatum>
-            ref={fgRef}
-            graphData={graphData}
-            backgroundColor="rgba(0,0,0,0)"
-            nodeRelSize={NODE_RADIUS}
-            d3AlphaDecay={0.02}
-            d3VelocityDecay={0.3}
-            cooldownTicks={250}
-            linkCurvature={(link) => ((pairCounts.get(link.pairKey) ?? 1) > 1 ? 0.28 : 0)}
-            linkColor={(link) => {
-              const dimmed = focusEdgeUuid !== null && link.uuid !== focusEdgeUuid
-              const base =
-                link.confidence === null || link.confidence === undefined
-                  ? MUTED[mode]
-                  : confidenceColor(mode, link.confidence)
-              return dimmed ? MUTED[mode] : base
-            }}
-            linkWidth={(link) => {
-              const width = 1 + Math.sqrt(link.confidence ?? 0.15) * 2.5
-              if (focusEdgeUuid === null) return width
-              return link.uuid === focusEdgeUuid ? width + 2 : Math.max(0.4, width - 1)
-            }}
-            linkDirectionalArrowLength={4}
-            linkDirectionalArrowRelPos={1}
-            linkLabel={(link) =>
-              `${link.name}: ${link.fact} (confidence: ${formatConfidence(link.confidence)})`
-            }
-            nodeLabel={(node) => `${node.name} (${node.type})`}
-            nodeCanvasObject={(node, ctx, globalScale) => {
-              const x = node.x ?? 0
-              const y = node.y ?? 0
-              const isSelected = selectedNodeUuid === node.id
-              const isHovered = hoveredNodeUuid === node.id
-              const radius = isHovered ? NODE_RADIUS + 1 : NODE_RADIUS
-              const color = colorForType(node.type)
-
-              if (isSelected || isHovered) {
-                ctx.beginPath()
-                ctx.arc(x, y, radius + 4, 0, 2 * Math.PI)
-                ctx.fillStyle = isSelected ? `${color}33` : `${color}22`
-                ctx.fill()
+          {canvasReady && (
+            <ForceGraph2D<NodeDatum, LinkDatum>
+              ref={fgRef}
+              graphData={graphData}
+              backgroundColor="rgba(0,0,0,0)"
+              nodeRelSize={NODE_RADIUS}
+              d3AlphaDecay={0.02}
+              d3VelocityDecay={0.3}
+              cooldownTicks={250}
+              linkCurvature={(link) => ((pairCounts.get(link.pairKey) ?? 1) > 1 ? 0.28 : 0)}
+              linkColor={(link) => {
+                const dimmed = focusEdgeUuid !== null && link.uuid !== focusEdgeUuid
+                const base =
+                  link.confidence === null || link.confidence === undefined
+                    ? MUTED[mode]
+                    : confidenceColor(mode, link.confidence)
+                return dimmed ? MUTED[mode] : base
+              }}
+              linkWidth={(link) => {
+                const width = 1 + Math.sqrt(link.confidence ?? 0.15) * 2.5
+                if (focusEdgeUuid === null) return width
+                return link.uuid === focusEdgeUuid ? width + 2 : Math.max(0.4, width - 1)
+              }}
+              linkDirectionalArrowLength={4}
+              linkDirectionalArrowRelPos={1}
+              linkLabel={(link) =>
+                `${link.name}: ${link.fact} (confidence: ${formatConfidence(link.confidence)})`
               }
+              nodeLabel={(node) => `${node.name} (${node.type})`}
+              nodeCanvasObject={(node, ctx, globalScale) => {
+                const x = node.x ?? 0
+                const y = node.y ?? 0
+                const isSelected = selectedNodeUuid === node.id
+                const isHovered = hoveredNodeUuid === node.id
+                const radius = isHovered ? NODE_RADIUS + 1 : NODE_RADIUS
+                const color = colorForType(node.type)
 
-              ctx.beginPath()
-              ctx.arc(x, y, radius, 0, 2 * Math.PI)
-              ctx.fillStyle = color
-              ctx.fill()
-              if (isSelected) {
-                ctx.lineWidth = 1.75 / globalScale
-                ctx.strokeStyle = INK[mode]
-                ctx.stroke()
-              }
-
-              if (globalScale > LABEL_ZOOM_THRESHOLD) {
-                const fontSize = 12 / globalScale
-                ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`
-                const label = node.name
-                const metrics = ctx.measureText(label)
-                const padX = 4 / globalScale
-                const padY = 2 / globalScale
-                const boxX = x + radius + 3 / globalScale
-                const boxY = y - fontSize / 2 - padY
-                const boxW = metrics.width + padX * 2
-                const boxH = fontSize + padY * 2
-
-                ctx.fillStyle = mode === 'dark' ? 'rgba(16,17,22,0.78)' : 'rgba(251,251,250,0.82)'
-                if (typeof ctx.roundRect === 'function') {
+                if (isSelected || isHovered) {
                   ctx.beginPath()
-                  ctx.roundRect(boxX, boxY, boxW, boxH, 3 / globalScale)
+                  ctx.arc(x, y, radius + 4, 0, 2 * Math.PI)
+                  ctx.fillStyle = isSelected ? `${color}33` : `${color}22`
                   ctx.fill()
-                } else {
-                  ctx.fillRect(boxX, boxY, boxW, boxH)
                 }
 
-                ctx.fillStyle = INK[mode]
-                ctx.textBaseline = 'middle'
-                ctx.fillText(label, boxX + padX, y)
-              }
-            }}
-            nodePointerAreaPaint={(node, color, ctx) => {
-              const x = node.x ?? 0
-              const y = node.y ?? 0
-              ctx.fillStyle = color
-              ctx.beginPath()
-              ctx.arc(x, y, 8, 0, 2 * Math.PI)
-              ctx.fill()
-            }}
-            onNodeClick={(node) => void openNode(String(node.id))}
-            onNodeHover={(node) => setHoveredNodeUuid(node ? String(node.id) : null)}
-            onBackgroundClick={() => setSelectedNodeUuid(null)}
-            height={height}
-          />
+                ctx.beginPath()
+                ctx.arc(x, y, radius, 0, 2 * Math.PI)
+                ctx.fillStyle = color
+                ctx.fill()
+                if (isSelected) {
+                  ctx.lineWidth = 1.75 / globalScale
+                  ctx.strokeStyle = INK[mode]
+                  ctx.stroke()
+                }
+
+                if (globalScale > LABEL_ZOOM_THRESHOLD) {
+                  const fontSize = 12 / globalScale
+                  ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`
+                  const label = node.name
+                  const metrics = ctx.measureText(label)
+                  const padX = 4 / globalScale
+                  const padY = 2 / globalScale
+                  const boxX = x + radius + 3 / globalScale
+                  const boxY = y - fontSize / 2 - padY
+                  const boxW = metrics.width + padX * 2
+                  const boxH = fontSize + padY * 2
+
+                  ctx.fillStyle = mode === 'dark' ? 'rgba(16,17,22,0.78)' : 'rgba(251,251,250,0.82)'
+                  if (typeof ctx.roundRect === 'function') {
+                    ctx.beginPath()
+                    ctx.roundRect(boxX, boxY, boxW, boxH, 3 / globalScale)
+                    ctx.fill()
+                  } else {
+                    ctx.fillRect(boxX, boxY, boxW, boxH)
+                  }
+
+                  ctx.fillStyle = INK[mode]
+                  ctx.textBaseline = 'middle'
+                  ctx.fillText(label, boxX + padX, y)
+                }
+              }}
+              nodePointerAreaPaint={(node, color, ctx) => {
+                const x = node.x ?? 0
+                const y = node.y ?? 0
+                ctx.fillStyle = color
+                ctx.beginPath()
+                ctx.arc(x, y, 8, 0, 2 * Math.PI)
+                ctx.fill()
+              }}
+              onNodeClick={(node) => void openNode(String(node.id))}
+              onNodeHover={(node) => setHoveredNodeUuid(node ? String(node.id) : null)}
+              onBackgroundClick={() => setSelectedNodeUuid(null)}
+              width={width}
+              height={height}
+            />
+          )}
         </div>
 
         <aside className="w-full shrink-0 lg:w-44">

@@ -102,7 +102,7 @@ export function AppShell() {
       {mobileNavOpen && (
         <div className="fixed inset-0 z-40 flex md:hidden">
           <div className="absolute inset-0 bg-black/40 animate-fade-in" onClick={() => setMobileNavOpen(false)} />
-          <div className="relative flex w-64 flex-col border-r border-border bg-card animate-slide-in-right shadow-xl">
+          <div className="relative flex w-64 flex-col border-r border-border bg-card animate-slide-in-left shadow-xl">
             <button
               type="button"
               onClick={() => setMobileNavOpen(false)}

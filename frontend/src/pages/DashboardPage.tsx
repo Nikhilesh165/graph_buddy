@@ -10,10 +10,10 @@ import {
   Workflow,
 } from 'lucide-react'
 import { getChatHistory, listSources } from '../api/client'
-import { Badge } from '../components/ui/Badge'
+import { Badge, type BadgeVariant } from '../components/ui/Badge'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { PageHeader } from '../components/layout/PageHeader'
-import { useAppData } from '../lib/appDataContext'
+import { useAppData, type BadgeState } from '../lib/appDataContext'
 import type { SourceRead } from '../types'
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -26,6 +26,15 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
       </CardContent>
     </Card>
   )
+}
+
+// "checking" is the normal first-render state, not a failure -- it used to
+// fall through to the red destructive badge on every page load.
+const HEALTH_BADGE: Record<BadgeState, BadgeVariant> = {
+  ok: 'success',
+  checking: 'secondary',
+  error: 'destructive',
+  unreachable: 'destructive',
 }
 
 type QuickLink = {
@@ -77,8 +86,8 @@ export function DashboardPage() {
         description="Your knowledge graph at a glance -- sources, ontology, and what's extracted so far."
         actions={
           <>
-            <Badge variant={backendState === 'ok' ? 'success' : 'destructive'}>Backend {backendState}</Badge>
-            <Badge variant={graphState === 'ok' ? 'success' : 'destructive'}>Graph DB {graphState}</Badge>
+            <Badge variant={HEALTH_BADGE[backendState]}>Backend {backendState}</Badge>
+            <Badge variant={HEALTH_BADGE[graphState]}>Graph DB {graphState}</Badge>
           </>
         }
       />
@@ -111,8 +120,10 @@ export function DashboardPage() {
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Sources" value={sources ? String(sources.length) : '—'} hint={`${extractedCount} extracted`} />
-        <StatCard label="Graph nodes" value={String(totalNodes)} />
-        <StatCard label="Graph edges" value={String(totalEdges)} />
+        {/* Summed per-source extraction counts: an entity or fact shared by
+            two sources is counted once for each, so these are upper bounds. */}
+        <StatCard label="Graph nodes" value={String(totalNodes)} hint="summed across sources" />
+        <StatCard label="Graph edges" value={String(totalEdges)} hint="summed across sources" />
         <StatCard
           label="Ontology"
           value={hasOntology ? `v${ontology!.version_number}` : '—'}

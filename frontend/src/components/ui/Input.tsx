@@ -21,7 +21,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
     <textarea
       className={cn(
         'w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground',
-        'placeholder:text-muted-foreground/70 transition-colors resize-vertical',
+        'placeholder:text-muted-foreground/70 transition-colors resize-y',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:border-ring',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         className,
