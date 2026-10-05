@@ -3,7 +3,10 @@
 `status`/`parse_error`/etc. track Phase 1's parse step; `graphiti_status`/
 `graphiti_error`/the *_count fields track Phase 2's separate extraction step
 (a parsed source may never be extracted, extraction may be re-run, etc., so
-this is deliberately not folded into `status`).
+this is deliberately not folded into `status`). `discovery_status`/
+`discovery_error` track the AI ontology-discovery pass that now runs on
+every upload (docs/MEMORY_AND_DISCOVERY.md §3) -- separate again, since it
+runs in the background after the upload request has already returned.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from sqlmodel import Field, SQLModel
 
 SourceStatus = Literal["uploaded", "parsed", "failed"]
 GraphitiStatus = Literal["not_extracted", "extracting", "extracted", "failed"]
+DiscoveryStatus = Literal["not_run", "pending", "running", "completed", "failed"]
 
 SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".docx", ".csv", ".txt", ".md"})
 
@@ -48,6 +52,14 @@ class Source(SQLModel, table=True):
     node_count: int = 0
     edge_count: int = 0
     extracted_at: datetime | None = None
+    # Ontology version the last successful extraction ran against -- lets
+    # the UI (and a future backfill job) tell which sources predate the
+    # ontology changes discovery has applied since.
+    extracted_ontology_version: int | None = None
+
+    # Plain str at the table level, same reason as `status` above.
+    discovery_status: str = "not_run"
+    discovery_error: str | None = None
 
     def preview(self, chars: int = 500) -> str | None:
         return self.parsed_text[:chars] if self.parsed_text else None
@@ -78,6 +90,10 @@ class SourceRead(BaseModel):
     node_count: int
     edge_count: int
     extracted_at: datetime | None
+    extracted_ontology_version: int | None
+
+    discovery_status: DiscoveryStatus
+    discovery_error: str | None
 
     @classmethod
     def from_source(cls, source: Source) -> SourceRead:
@@ -98,4 +114,7 @@ class SourceRead(BaseModel):
             node_count=source.node_count,
             edge_count=source.edge_count,
             extracted_at=source.extracted_at,
+            extracted_ontology_version=source.extracted_ontology_version,
+            discovery_status=source.discovery_status,
+            discovery_error=source.discovery_error,
         )

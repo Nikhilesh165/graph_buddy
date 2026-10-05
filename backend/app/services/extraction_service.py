@@ -24,8 +24,10 @@ from graphiti_core import Graphiti
 from graphiti_core.nodes import EpisodeType
 from pydantic import BaseModel, create_model
 from pydantic import Field as PydanticField
+from sqlmodel import Session
 
 from app.core.config import Settings
+from app.models.episode import Episode
 from app.models.ontology import EntityType, OntologyVersion, RelationType
 from app.models.source import Source
 
@@ -248,4 +250,54 @@ async def extract_source(
 
     summary.nodes_touched = len(nodes_seen)
     summary.edges_touched = len(edges_seen)
+    return summary
+
+
+async def extract_and_record(
+    session: Session,
+    graphiti: Graphiti,
+    source: Source,
+    ontology: OntologyVersion,
+    settings: Settings,
+) -> ExtractionSummary:
+    """`extract_source` plus the bookkeeping around it: the source row's
+    graphiti_status/error/counts and the per-episode provenance rows
+    (app/models/episode.py). Shared by the explicit POST
+    /sources/{id}/extract route and the upload pipeline's optional
+    auto-extract (app/services/pipeline.py). Re-raises on failure, after
+    recording it on the source row -- callers decide how to surface it.
+    """
+    source.graphiti_status = "extracting"
+    session.add(source)
+    session.commit()
+
+    try:
+        summary = await extract_source(graphiti, source, ontology, settings)
+    except Exception as exc:
+        # Whatever episodes already committed before the failure stay in the
+        # graph (Graphiti commits per-episode).
+        source.graphiti_status = "failed"
+        source.graphiti_error = str(exc)
+        session.add(source)
+        session.commit()
+        raise
+
+    source.graphiti_status = "extracted"
+    source.graphiti_error = None
+    source.episode_count += summary.episodes_added
+    source.node_count = summary.nodes_touched
+    source.edge_count = summary.edges_touched
+    source.extracted_at = datetime.now(UTC)
+    source.extracted_ontology_version = ontology.version_number
+    session.add(source)
+    for record in summary.episode_records:
+        session.add(
+            Episode(
+                episode_uuid=record.episode_uuid,
+                source_id=source.id,
+                chunk_index=record.chunk_index,
+                chunk_preview=record.chunk_preview,
+            )
+        )
+    session.commit()
     return summary

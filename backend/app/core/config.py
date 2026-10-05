@@ -9,6 +9,7 @@ it's invoked from the repo root or from /backend.
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from graphiti_core.llm_client.openai_base_client import (
     DEFAULT_MODEL as GRAPHITI_DEFAULT_OPENAI_MODEL,
@@ -49,6 +50,46 @@ class Settings(BaseSettings):
     # --- Phase 2: extraction ---
     extraction_chunk_chars: int = 3000  # prose (paragraph-packed)
     extraction_chunk_rows: int = 50  # CSV (header repeated per chunk)
+
+    # --- Memory + AI-driven discovery (docs/MEMORY_AND_DISCOVERY.md) ---
+    # How much the discovery cycle may change the ontology without asking:
+    #   manual     -- queue every change for review in the Discovery Feed
+    #   assisted   -- auto-apply refinements of existing types (new property,
+    #                 extra relation endpoints, better description)
+    #   autonomous -- also auto-apply new entity/relation types
+    # Renames and removals are never auto-applied at any level.
+    ontology_autonomy: Literal["manual", "assisted", "autonomous"] = "autonomous"
+    # Run the discovery pass in the background after every successful upload
+    # (bootstrap when there's no ontology yet, evolve it otherwise).
+    auto_discover_on_upload: bool = True
+    # Then extract the source into the graph under the updated ontology.
+    # Off by default: extraction is one LLM call per chunk, and a large file
+    # shouldn't start spending on upload without an explicit opt-in.
+    auto_extract_on_upload: bool = False
+
+    # Chat: resolve each question against the ontology + memory before
+    # retrieval (one extra structured LLM call per question).
+    query_resolution_enabled: bool = True
+    chat_result_limit: int = 10
+    # Working memory: how many recent turns of the same conversation the
+    # resolver and the answer see verbatim.
+    memory_working_turns: int = 6
+    # Episodic recall: older turns (any conversation) pulled back in by
+    # embedding similarity / shared graph entities.
+    memory_recall_k: int = 3
+    memory_recall_min_score: float = 0.35
+    # Learned vocabulary entries ("accounts" -> Customer) shown to the resolver.
+    memory_vocabulary_limit: int = 40
+
+    # Periodic consolidation cycle; 0 disables the background schedule (the
+    # manual POST /memory/consolidate trigger still works).
+    consolidation_interval_minutes: int = 360
+    # A conversation's rolling summary is refreshed once it has at least this
+    # many turns not yet folded into it.
+    consolidation_summary_min_new_turns: int = 4
+    # Rebuild Graphiti community summaries when new episodes arrived since
+    # the last cycle -- one LLM call per community, so it can be turned off.
+    consolidation_build_communities: bool = True
 
 
 @lru_cache

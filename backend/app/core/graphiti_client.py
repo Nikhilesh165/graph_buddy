@@ -11,6 +11,7 @@ we track readiness on `GraphitiState` and let `/health/graph` report it.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from graphiti_core import Graphiti
@@ -59,6 +60,12 @@ class GraphitiState:
         self.graphiti: Graphiti | None = None
         self.ready = False
         self.error: str | None = None
+        # Serializes graph-mutating work (extraction, community rebuilds).
+        # Graphiti expects episodes to be added one at a time ("each episode
+        # is added sequentially and awaited before adding the next one" --
+        # Graphiti.add_episode's docstring), and since uploads can now kick
+        # off background extraction, two of them could otherwise interleave.
+        self.write_lock = asyncio.Lock()
 
     def _ensure_built(self) -> None:
         if self.graphiti is None:

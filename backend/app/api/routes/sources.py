@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
-from app.models.episode import Episode
 from app.models.source import SUPPORTED_EXTENSIONS, Source, SourceRead
-from app.services import extraction_service, ontology_service
+from app.services import extraction_service, ontology_service, pipeline
 from app.services.parsing import parse_file
 
 logger = logging.getLogger(__name__)
@@ -36,6 +42,8 @@ class ExtractionResult(BaseModel):
 
 @router.post("", response_model=SourceRead)
 async def upload_source(
+    request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -86,6 +94,17 @@ async def upload_source(
         source.parsed_text = parsed.text
         source.char_count = parsed.char_count
         source.row_count = parsed.row_count
+        if settings.auto_discover_on_upload:
+            # The AI discovery pass (docs/MEMORY_AND_DISCOVERY.md §3.1) runs
+            # after this response is sent -- bootstrap or evolve the
+            # ontology from this file, then optionally extract it.
+            source.discovery_status = "pending"
+            background_tasks.add_task(
+                pipeline.run_source_discovery_job,
+                source.id,
+                request.app.state.graphiti_state,
+                settings,
+            )
 
     session.add(source)
     session.commit()
@@ -135,42 +154,15 @@ async def extract_source(
     if not connected:
         raise HTTPException(status_code=503, detail=f"Graph database not available: {error}")
 
-    source.graphiti_status = "extracting"
-    session.add(source)
-    session.commit()
-
-    try:
-        summary = await extraction_service.extract_source(
-            graphiti_state.graphiti, source, ontology, settings
-        )
-    except Exception as exc:  # noqa: BLE001 - record the failure on the source
-        # row and surface it cleanly instead of a 500; whatever episodes
-        # already committed before the failure stay in the graph (Graphiti
-        # commits per-episode).
-        source.graphiti_status = "failed"
-        source.graphiti_error = str(exc)
-        session.add(source)
-        session.commit()
-        logger.warning("Extraction failed for source %s: %s", source_id, exc)
-        raise HTTPException(status_code=502, detail=f"Extraction failed: {exc}") from exc
-
-    source.graphiti_status = "extracted"
-    source.graphiti_error = None
-    source.episode_count += summary.episodes_added
-    source.node_count = summary.nodes_touched
-    source.edge_count = summary.edges_touched
-    source.extracted_at = datetime.now(UTC)
-    session.add(source)
-    for record in summary.episode_records:
-        session.add(
-            Episode(
-                episode_uuid=record.episode_uuid,
-                source_id=source.id,
-                chunk_index=record.chunk_index,
-                chunk_preview=record.chunk_preview,
+    async with graphiti_state.write_lock:
+        try:
+            summary = await extraction_service.extract_and_record(
+                session, graphiti_state.graphiti, source, ontology, settings
             )
-        )
-    session.commit()
+        except Exception as exc:  # noqa: BLE001 - already recorded on the source
+            # row by extract_and_record; surface it cleanly instead of a 500.
+            logger.warning("Extraction failed for source %s: %s", source_id, exc)
+            raise HTTPException(status_code=502, detail=f"Extraction failed: {exc}") from exc
 
     return ExtractionResult(
         source_id=source.id,

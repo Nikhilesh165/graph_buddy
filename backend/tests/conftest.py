@@ -11,7 +11,7 @@ no API keys, per docs/ROADMAP.md Phase 0/1's "no live run needed to verify"
 plan.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -22,6 +22,8 @@ import app.core.graphiti_client as graphiti_client_module
 import app.core.llm as llm_module
 from app.core.config import get_settings
 from app.main import create_app
+from app.models.chat import QueryPlan
+from app.models.discovery import OntologyChangeSet
 from app.models.ontology import EntityType, OntologyProposal, RelationType
 
 
@@ -29,6 +31,11 @@ from app.models.ontology import EntityType, OntologyProposal, RelationType
 def _isolated_app_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("UPLOADS_DIR", str(tmp_path / "uploads"))
+    # Background work is opt-in per test (see `discovery_enabled`): an
+    # upload shouldn't silently fire an LLM discovery pass in tests about
+    # parsing, and the periodic consolidation loop shouldn't run at all.
+    monkeypatch.setenv("AUTO_DISCOVER_ON_UPLOAD", "false")
+    monkeypatch.setenv("CONSOLIDATION_INTERVAL_MINUTES", "0")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -98,10 +105,17 @@ class FakeEntityEdge:
         self.save = AsyncMock()
 
 
+class FakeCommunityNode:
+    def __init__(self, uuid: str, name: str, summary: str) -> None:
+        self.uuid = uuid
+        self.name = name
+        self.summary = summary
+
+
 class FakeSearchResults:
     """Stands in for graphiti_core.search.search_config.SearchResults --
-    chat_service.retrieve only reads the edge/node lists and their parallel
-    reranker-score lists (see that module's docstring)."""
+    chat_service.retrieve only reads the edge/node/community lists and their
+    parallel reranker-score lists (see that module's docstring)."""
 
     def __init__(
         self,
@@ -109,11 +123,14 @@ class FakeSearchResults:
         node_reranker_scores: list[float] | None = None,
         edges: list[FakeEntityEdge] | None = None,
         edge_reranker_scores: list[float] | None = None,
+        communities: list[FakeCommunityNode] | None = None,
     ) -> None:
         self.nodes = nodes or []
         self.node_reranker_scores = node_reranker_scores or [1.0] * len(self.nodes)
         self.edges = edges or []
         self.edge_reranker_scores = edge_reranker_scores or [1.0] * len(self.edges)
+        self.communities = communities or []
+        self.community_reranker_scores = [1.0] * len(self.communities)
 
 
 class FakeAddEpisodeResult:
@@ -136,6 +153,24 @@ def default_add_episode_result() -> FakeAddEpisodeResult:
     )
 
 
+class FakeEmbedder:
+    """Stands in for graphiti_core's OpenAIEmbedder -- a deterministic
+    bag-of-words vector, so episodic-recall tests get real cosine
+    similarities (questions sharing words score higher) without a model."""
+
+    DIM = 64
+
+    def __init__(self) -> None:
+        self.create = AsyncMock(side_effect=self._create)
+
+    async def _create(self, input_data: list[str] | str) -> list[float]:
+        text = input_data[0] if isinstance(input_data, list) else input_data
+        vector = [0.0] * self.DIM
+        for word in text.lower().replace("?", " ").split():
+            vector[sum(map(ord, word)) % self.DIM] += 1.0
+        return vector
+
+
 class FakeGraphiti:
     """Stands in for graphiti_core.Graphiti."""
 
@@ -149,6 +184,9 @@ class FakeGraphiti:
         # found), so a test that doesn't care about chat still gets a valid
         # SearchResults-shaped object rather than a MagicMock.
         self.search_ = AsyncMock(return_value=FakeSearchResults())
+        self.embedder = FakeEmbedder()
+        # consolidation_service's community rebuild (periodic memory).
+        self.build_communities = AsyncMock(return_value=([], []))
 
     async def _build_indices(self, delete_existing: bool = False) -> None:
         if not self._should_connect:
@@ -223,6 +261,18 @@ def mock_propose_ontology(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     return mock
 
 
+@pytest.fixture(autouse=True)
+def mock_resolve_query(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Autouse, unlike the other LLM mocks: every chat turn now runs query
+    resolution first, and no test should reach the real OpenAI API just
+    because a developer happens to have OPENAI_API_KEY exported. Defaults
+    to a passthrough plan (search for the question verbatim); request it by
+    name to configure a specific resolution."""
+    mock = AsyncMock(side_effect=lambda *, question, **_: QueryPlan.passthrough(question))
+    monkeypatch.setattr(llm_module, "resolve_query", mock)
+    return mock
+
+
 @pytest.fixture
 def mock_generate_chat_answer(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """Patches app.core.llm.generate_chat_answer so chat tests never call the
@@ -231,4 +281,29 @@ def mock_generate_chat_answer(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """
     mock = AsyncMock(return_value="Alice knows Bob [1].")
     monkeypatch.setattr(llm_module, "generate_chat_answer", mock)
+    return mock
+
+
+@pytest.fixture
+def configure(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Override settings for one test via their env-var names, e.g.
+    `configure(AUTO_DISCOVER_ON_UPLOAD="true", ONTOLOGY_AUTONOMY="manual")`.
+    Routes read settings through `Depends(get_settings)` on every request,
+    so clearing the cache is enough for the override to take effect even
+    after the app has started."""
+
+    def _configure(**env: str) -> None:
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        get_settings.cache_clear()
+
+    return _configure
+
+
+@pytest.fixture
+def mock_propose_ontology_changes(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Patches app.core.llm.propose_ontology_changes (ontology evolution,
+    from a source or from conversations). Defaults to "no changes needed"."""
+    mock = AsyncMock(return_value=OntologyChangeSet(summary="Nothing to change."))
+    monkeypatch.setattr(llm_module, "propose_ontology_changes", mock)
     return mock

@@ -75,6 +75,7 @@ def save_new_version(
     relation_types: list[RelationType],
     created_by: OntologyVersionSource,
     source_id: str | None = None,
+    note: str | None = None,
 ) -> OntologyVersion:
     latest = get_latest_version(session)
     diff = compute_diff(latest, entity_types, relation_types)
@@ -85,6 +86,7 @@ def save_new_version(
         created_by=created_by,
         source_id=source_id,
         diff=diff.model_dump(),
+        note=note,
     )
     session.add(version)
     session.commit()

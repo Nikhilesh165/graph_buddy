@@ -18,7 +18,10 @@ from pydantic import Field as PydanticField
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
-OntologyVersionSource = Literal["bootstrap", "user_edit"]
+# "discovery" = written by the AI discovery cycle (app/services/
+# discovery_service.py) -- either auto-applied under the configured autonomy
+# policy or accepted by the user from the Discovery Feed.
+OntologyVersionSource = Literal["bootstrap", "user_edit", "discovery"]
 
 
 def _now() -> datetime:
@@ -98,6 +101,9 @@ class OntologyVersion(SQLModel, table=True):
     source_id: str | None = None
     diff: dict | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_now)
+    # Why this version exists, in plain language -- set by discovery (the
+    # change set's summary) so the Studio can say more than "via discovery".
+    note: str | None = None
 
     def entity_types_typed(self) -> list[EntityType]:
         return [EntityType.model_validate(d) for d in self.entity_types]
@@ -120,6 +126,7 @@ class OntologyVersionRead(BaseModel):
     source_id: str | None
     diff: OntologyDiff | None
     created_at: datetime
+    note: str | None = None
 
     @classmethod
     def from_version(cls, version: OntologyVersion) -> OntologyVersionRead:
@@ -132,6 +139,7 @@ class OntologyVersionRead(BaseModel):
             source_id=version.source_id,
             diff=version.diff_typed(),
             created_at=version.created_at,
+            note=version.note,
         )
 
     @classmethod

@@ -29,8 +29,23 @@ class RetrievalTraceRecord(SQLModel, table=True):
     # mirrors chat_service.RetrievedNode.
     seed_nodes: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     # list[{"edge_uuid","name","fact","confidence","score",
-    #       "source_node_uuid","target_node_uuid"}] --
+    #       "source_node_uuid","target_node_uuid","ontology_match"}] --
     # mirrors chat_service.RetrievedFact.
     facts: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     final_context: str
     created_at: datetime = Field(default_factory=_now)
+
+    # --- Query resolution + memory (docs/MEMORY_AND_DISCOVERY.md §2.3) ---
+    # Nullable: traces written before this existed have none of these.
+    # QueryPlan.model_dump() plus the ontology filters actually applied
+    # ({"plan": {...}, "edge_types": [...], "node_labels": [...],
+    #   "anchors": [{"uuid","name","type"}]}).
+    resolution: dict | None = Field(default=None, sa_column=Column(JSON(none_as_null=True)))
+    # Which memory fed this answer: {"conversation_summary": str,
+    # "working_turns": [{"turn_id","question"}],
+    # "recalled": [{"turn_id","question","score","reason"}],
+    # "vocabulary": [{"term","maps_to"}]}.
+    memory: dict | None = Field(default=None, sa_column=Column(JSON(none_as_null=True)))
+    # list[{"uuid","name","summary","score"}] -- community summaries
+    # (periodic memory) included as background for broad questions.
+    communities: list[dict] | None = Field(default=None, sa_column=Column(JSON(none_as_null=True)))
