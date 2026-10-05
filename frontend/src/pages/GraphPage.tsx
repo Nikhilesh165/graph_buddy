@@ -1,27 +1,29 @@
 import { Share2 } from 'lucide-react'
-import { PageHeader } from '../components/layout/PageHeader'
+import { Link } from 'react-router-dom'
+import { Button } from '../components/ui/Button'
 import { EmptyState } from '../components/ui/EmptyState'
-import { GraphExplorer } from '../components/GraphExplorer'
+import { GraphExplorer } from '../graph/GraphExplorer'
 import { useAppData } from '../lib/appDataContext'
 
 export function GraphPage() {
   const { ontology, hasOntology } = useAppData()
 
-  return (
-    <div>
-      <PageHeader
-        title="Graph Explorer"
-        description="Filter by entity type or confidence, search facts, and click a node to inspect its neighborhood and provenance."
-      />
-      {hasOntology && ontology ? (
-        <GraphExplorer ontology={ontology} />
-      ) : (
+  if (!hasOntology || !ontology) {
+    return (
+      <div className="flex h-full items-center justify-center">
         <EmptyState
           icon={Share2}
           title="Nothing to explore yet"
           description="Extract at least one source into the graph before there's anything to visualize here."
+          action={
+            <Link to="/sources">
+              <Button size="sm">Go to Sources</Button>
+            </Link>
+          }
         />
-      )}
-    </div>
-  )
+      </div>
+    )
+  }
+
+  return <GraphExplorer ontology={ontology} />
 }

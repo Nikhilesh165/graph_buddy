@@ -3,7 +3,13 @@
 This documents the redesign of `frontend/` from a single scrolling page into
 a multi-page app, why each decision was made, and what's implemented vs.
 left for later. Written alongside the Phase 1 implementation described
-below (all of it is in this branch); update this file as later phases land.
+below; update this file as later phases land.
+
+> **Phase 2 has landed** — an Obsidian-style workspace and a purpose-built
+> graph engine that replaces `react-force-graph-2d`. Phase 1's routing,
+> page split, and lifted app data still stand; its design tokens, shell,
+> and the whole "Graph simulation" section below are superseded. See
+> [Phase 2](#phase-2--obsidian-style-workspace-and-a-purpose-built-graph-engine).
 
 ## Why
 
@@ -170,16 +176,220 @@ free.
 
 ## Future directions
 
-- **A real command palette** (⌘K) for jumping between pages / searching
-  sources or entities directly, now that there's more than one page to
-  jump between — the dashboard-sidebar reference pulled from 21st.dev had
-  one; it wasn't built here because there's nothing yet to search across
-  pages for beyond what each page's own search box already covers.
+- ~~**A real command palette** (⌘K)~~ — done in Phase 2.
 - **Time-slider on the Graph Explorer**, per `docs/VISION.md`'s own
-  "future directions" — bi-temporal edges already exist in the data model;
-  this rehaul's graph work (curvature, force tuning) is now the base a
-  time-scrubbing view would sit on top of.
-- **Persisted per-viewer UI state** (last-visited page, collapsed sidebar
-  on desktop, a11y prefers-reduced-motion opt-out for the force
-  simulation) — none of it needed a redesign decision, just wasn't in
-  scope for this pass.
+  "future directions" — still open; see Phase 2's "Left for later".
+- ~~**Persisted per-viewer UI state**~~ and ~~an explicit light/dark
+  toggle~~ — done in Phase 2, along with `prefers-reduced-motion` support.
+
+---
+
+## Phase 2 — Obsidian-style workspace and a purpose-built graph engine
+
+### Why
+
+The ask was a complete rehaul of the graph viewer toward an Obsidian-vault
+feel — calm motion, readability, ease of use — and a UI that reads as a
+professional application. Phase 1's tuning of `react-force-graph-2d` had hit
+the library's ceiling:
+
+- **The layout reset on every filter change.** `GraphCanvas` rebuilt its
+  node objects in a `useMemo` per data change, and force-graph keeps
+  positions by object identity — so every filter tweak re-exploded the
+  layout from scratch and destroyed the viewer's mental map.
+- **Visual state changed in hard steps.** Hover and selection redrew
+  instantly; there was no way to ease a whole neighborhood into focus
+  while the rest fades back, which is most of what makes Obsidian's graph
+  feel calm.
+- **Labels couldn't be made readable at scale.** Node names were all-or-
+  nothing past one zoom threshold, drawn per node with no collision
+  handling, so dense regions turned into overlapping text.
+- **Physics and drawing ran on separate loops**, and the canvas kept
+  repainting while idle.
+
+### Design language
+
+`index.css` now carries an Obsidian-style token set: a neutral grey ramp
+(`base-00` … `base-100`), one violet accent, flat surfaces separated by
+hairline borders instead of shadows, and three text weights (`foreground`
+/ `muted-foreground` / `faint-foreground`). Token names stay shadcn-style,
+so utilities read the same as before.
+
+- **Explicit theme toggle.** Dark mode is class-driven (`<html
+  class="dark">`) via `lib/ThemeProvider.tsx` — system / light / dark,
+  persisted — with a pre-paint script in `index.html` so dark-mode users
+  never see a light flash. Tailwind's `dark:` variant is remapped to the
+  class. The canvas reads its colors from `GRAPH_THEME` in
+  `lib/palette.ts` (canvas can't use CSS variables), kept in step with
+  the tokens; the validated entity-type `CATEGORICAL` palette is
+  unchanged.
+- **Self-hosted fonts.** Inter and JetBrains Mono ship via `@fontsource`
+  instead of the Google Fonts CDN, so the UI renders in its typeface
+  offline or behind a strict proxy.
+- **Motion** uses one easing family (`ease-out-expo`) and short durations;
+  overlays animate both in *and* out (`lib/usePresence.ts`), and
+  `prefers-reduced-motion` disables decorative motion everywhere,
+  including the graph (which then settles its layout synchronously).
+
+### The workspace
+
+`components/layout/AppShell.tsx` is modeled on Obsidian's window:
+
+- **Ribbon** — a thin icon strip: sidebar toggle, one icon per view,
+  command palette and theme toggle pinned to the bottom.
+- **Explorer sidebar** — the "vault": uploaded sources as files (with
+  extraction-status dots, linking to `/sources?focus=<id>`), entity types
+  (graph-colored, linking to `/graph?types=<name>`), and relation types
+  (`/graph?rels=<name>`). Collapsible (`⌘\`) and drag-resizable, both
+  persisted.
+- **Title bar** with a breadcrumb and an always-visible "Search or jump to…"
+  entry point; **status bar** with service health, ontology version, and a
+  slot pages render into (`StatusBarItem` — the graph shows interaction
+  hints there).
+- **Command palette** (`⌘K` / `⌘P`; Ctrl elsewhere) — fuzzy search over
+  every registered command. The shell registers navigation, theme,
+  sidebar, upload, entity types, and sources; the Graph Explorer
+  registers graph actions plus one command per loaded node, so it doubles
+  as Obsidian's quick switcher for entities (`lib/commandContext.ts`).
+- Every view renders into a full-height `<main>` and owns its scrolling:
+  document pages (Overview, Sources, Ontology) use a centered
+  readable-width column with an inline title (`DocumentPage`,
+  `PageHeader`); the graph is full-bleed; chat is a full-height column.
+- Under `md`, the ribbon and sidebar collapse into a slide-in drawer, and
+  the graph inspector becomes a bottom sheet.
+
+### The graph engine (`src/graph/engine.ts`)
+
+A framework-agnostic canvas renderer (~1,600 lines, no dependency beyond
+`d3-force`), wrapped for React by `graph/GraphView.tsx`. It is still the
+*one* renderer in the app (ARCHITECTURE.md §4): Graph Explorer, Retrieval
+Inspector, the Overview preview, and Ontology Studio's new schema view
+all draw through `GraphView`.
+
+**Motion**
+- Physics and drawing share one `requestAnimationFrame` loop (d3's timer
+  is stopped; the simulation is ticked per frame). The loop **goes fully
+  idle** once the layout, camera, and every transition have settled, and
+  wakes on input or data.
+- Every visual state is an eased per-element value (exponential approach
+  with a time constant), never a swap: hover/selection dimming, emphasis,
+  selection rings, label visibility, and nodes/links entering (scale-in
+  with a slight overshoot) or leaving (fade in place).
+- The camera eases: wheel zoom is anchored to the cursor and smoothed
+  against a target camera so rapid ticks compose; fit / center-on / zoom
+  buttons are timed flights; a pan carries its release velocity into an
+  inertial glide; while a fresh layout blooms, the camera tracks it.
+
+**Layout continuity**
+- `setData` *merges* into the running simulation: surviving nodes keep
+  position and velocity, new nodes spawn beside an already-placed
+  neighbor, removed ones freeze and fade. Nodes that leave are remembered,
+  so toggling a filter or local graph off brings everything back where
+  you last saw it.
+- Reheating is proportional to how much changed, and a no-op refresh
+  doesn't reheat at all.
+
+**Readability**
+- Node radius grows with degree (hubs read as hubs); everything is drawn
+  in screen space, so text and hairlines stay crisp at any zoom and DPR.
+- Labels fade in with zoom (the "text fade threshold" slider), earlier for
+  hubs; are placed **greedily by priority on a collision grid** so they
+  never overlap; and get a background-colored halo instead of a box.
+- Relation names are drawn along emphasized links (and every link at close
+  zoom), rotated to stay upright. Parallel facts between the same pair bow
+  apart symmetrically.
+- Confidence is encoded as link opacity, with unscored facts dashed (so
+  "nobody scored this" never reads as "scored zero") — the same number
+  the inspector and chat citations show as a meter.
+
+**Interaction**
+- Hover (or select) a node: its neighborhood stays lit with accent-colored
+  links and relation labels while everything else recedes. Hover a link
+  for its fact. Drag nodes; pinch on touch; double-click to focus.
+- Hover re-evaluates when the camera moves under a still cursor.
+
+### Graph view UI (`src/graph/`)
+
+- **Search** (top-left, `/` or `⌘F`): server-side filter over facts and
+  names as before; Enter jumps to the best-matching node.
+- **Settings panel** (top-right, closed by default like Obsidian's;
+  badge counts active filters): *Filters* — minimum confidence, facts
+  loaded (100–1000), entity-type and relation chips; *Display* — color by
+  type, arrows, confidence as opacity (with a key), relation labels, text
+  fade threshold, node size, link thickness; *Forces* — center, repel,
+  link force, link distance. All live, all persisted, each section
+  resettable; plus **Replay growth** (Obsidian's "animate": the graph
+  regrows in the order facts were recorded).
+- **Legend** (bottom-left): hover a type to spotlight its nodes; click to
+  toggle it in the type filter.
+- **Toolbar** (bottom-right): zoom, fit, local graph, full screen.
+- **Inspector** (right pane): a node's properties (Obsidian-style property
+  rows), summary, **Outgoing links** and **Backlinks** (hovering one
+  highlights that fact on the canvas; clicking a name walks to it), and
+  **Sources** with excerpts; or, for a fact, its endpoints, confidence,
+  and bi-temporal dates. Back/forward history (`[` / `]`), and details
+  are cached for instant navigation.
+- **Local graph** (`L`): the selected node's 1–3-hop neighborhood, framed
+  automatically; selecting another node walks the local graph with it.
+- **URL state**: `?types=`, `?rels=`, and `?node=` are the source of
+  truth, so the sidebar, palette, and shared links deep-link into an
+  exact view. Fits and centering account for open panels, so nodes never
+  land under the inspector.
+
+| Shortcut | Action |
+|---|---|
+| `⌘K` / `⌘P` | Command palette (pages, actions, types, sources, nodes) |
+| `⌘\` | Toggle sidebar |
+| `/`, `⌘F` | Focus graph search (Enter jumps to the best match) |
+| `F` | Fit graph (or the local graph) to view |
+| `+` / `−` | Zoom |
+| `L` | Toggle local graph for the selected node |
+| `[` / `]` | Back / forward through inspected nodes and facts |
+| `Esc` | Close the inspector, then exit local graph |
+| `↑` / `↓` | Step through facts in the Retrieval Inspector |
+
+### Other pages
+
+- **Overview** — a stats strip, a task-list "getting started" with
+  progress, a live graph preview (click a node to open it in the graph),
+  recent sources and questions.
+- **Sources** — a file list with status pills and metadata; upload many
+  files at once, by button or by dropping anywhere on the page;
+  `?focus=<id>` scrolls to and flashes a row.
+- **Ontology** — collapsible type rows color-keyed to the graph; relation
+  endpoints picked from entity-type chips instead of comma-separated text;
+  a sticky unsaved-changes bar (discard / save); the version diff as a
+  callout; and a **Schema graph** tab drawing entity types and allowed
+  relations through `GraphView` (as ARCHITECTURE.md §4 anticipated).
+- **Chat** — the question appears immediately with a "searching the graph"
+  indicator; `[n]` markers become citation chips that show their fact on
+  hover; copy and "Explain this answer" actions; starter prompts derived
+  from the ontology. The **Retrieval Inspector** renders the trace through
+  `GraphView` and lists facts as a ranked, clickable timeline.
+
+Business logic is unchanged: same API calls and shapes, same
+auto-bootstrap on first upload, same ontology versioning. Sources moved
+into `AppDataProvider` so the sidebar, Overview, and Sources page share
+one list.
+
+### How it was verified
+
+`tsc -b` and `oxlint` are clean, and the production build is smaller than
+before (≈439 kB vs ≈496 kB JS) despite the added UI, because the custom
+engine is lighter than `react-force-graph-2d` and its dependencies.
+Behavior was checked in headless Chromium (Playwright) against mocked API
+responses, in dark, light, and a 390 px mobile viewport: palette → jump to
+node → inspector → hover → local graph → settings; every page; the
+Retrieval Inspector. With 700 nodes / 1,000 facts the layout animated at a
+steady 60 fps (worst frame 16.8 ms, software rendering), and once settled
+the app scheduled **zero** animation frames.
+
+### Left for later
+
+- **Time slider** over `valid_at` / `invalid_at` (VISION.md) — the
+  inspector now shows the dates and Replay animates by recorded time; a
+  true "as of" scrubber is the natural next step on top of the engine.
+- **Highlight-only search** — search filters server-side; a client-side
+  "dim non-matches" mode would keep surrounding context visible.
+- **Automated UI tests** — the repo has no frontend test setup; the
+  Playwright checks above were run ad hoc.

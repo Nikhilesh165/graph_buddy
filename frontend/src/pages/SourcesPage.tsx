@@ -1,17 +1,28 @@
+import { useCallback, useRef } from 'react'
+import { Upload } from 'lucide-react'
+import { DocumentPage } from '../components/layout/DocumentPage'
 import { PageHeader } from '../components/layout/PageHeader'
 import { SourcesPanel } from '../components/SourcesPanel'
-import { useAppData } from '../lib/appDataContext'
+import { Button } from '../components/ui/Button'
 
 export function SourcesPage() {
-  const { hasOntology, setOntology } = useAppData()
+  const openPicker = useRef<() => void>(() => {})
+  const registerUploadTrigger = useCallback((open: () => void) => {
+    openPicker.current = open
+  }, [])
 
   return (
-    <div>
+    <DocumentPage>
       <PageHeader
         title="Sources"
-        description="Upload documents, then propose an ontology and extract them into the graph."
+        description="Upload documents, then propose an ontology from them and extract their entities and facts into the graph."
+        actions={
+          <Button onClick={() => openPicker.current()}>
+            <Upload className="h-4 w-4" /> Upload
+          </Button>
+        }
       />
-      <SourcesPanel hasOntology={hasOntology} onOntologyChange={setOntology} />
-    </div>
+      <SourcesPanel registerUploadTrigger={registerUploadTrigger} />
+    </DocumentPage>
   )
 }

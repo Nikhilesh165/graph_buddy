@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { OntologyVersion } from '../types'
+import type { OntologyVersion, SourceRead } from '../types'
 
 // Split out from AppDataProvider.tsx (the provider component) so that file
 // exports only a component -- same "keep constants/hooks in their own
@@ -20,6 +20,12 @@ export type AppData = {
    * color slot (lib/palette.ts) so it stays stable across pages. */
   entityTypeOrder: string[]
   hasOntology: boolean
+  /** Uploaded sources, newest first (null until the first load finishes).
+   * Shared so the sidebar, Overview, and Sources page never disagree. */
+  sources: SourceRead[] | null
+  sourcesError: string | null
+  /** Insert or replace one source (after an upload / extraction). */
+  upsertSource: (source: SourceRead) => void
 }
 
 export const AppDataContext = createContext<AppData | null>(null)

@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
+import type { ThemeMode } from './themeContext'
 
-// Colors for the Graph Explorer's canvas rendering (node/edge colors can't be
-// CSS custom properties -- force-graph draws directly to a <canvas>, so
-// these need to be concrete hex per light/dark mode). Values are the
-// dataviz skill's validated default palette (light/dark pairs pre-cleared
-// for CVD-safety and contrast) -- see that skill's references/palette.md.
-// Do not add/reorder slots without re-running its validator.
+// Colors for canvas rendering (graph/engine.ts). Canvas drawing can't read
+// CSS custom properties per frame, so these are concrete hex per light/dark
+// mode. CATEGORICAL is the dataviz skill's validated default palette
+// (light/dark pairs pre-cleared for CVD-safety and contrast) -- see that
+// skill's references/palette.md. Do not add/reorder slots without
+// re-running its validator.
 
-export type ThemeMode = 'light' | 'dark'
+export type { ThemeMode }
 
 // Categorical: one slot per entity type, assigned in a fixed order (the
 // order types first appear in the ontology) -- never reassigned when the
@@ -37,67 +37,56 @@ const CATEGORICAL: Record<ThemeMode, string[]> = {
   ],
 }
 
-export const MUTED: Record<ThemeMode, string> = {
+const MUTED: Record<ThemeMode, string> = {
   light: '#898781',
   dark: '#898781',
 }
 
-export const INK: Record<ThemeMode, string> = {
-  light: '#0b0b0b',
-  dark: '#ffffff',
-}
-
-// Sequential (confidence, a magnitude): one hue (blue), low->high. The
-// direction of the light->dark ramp is defined against a light surface;
-// on a dark canvas we keep "more confident = more contrast from the
-// background" by running lighter-to-brighter instead of light-to-navy, so
-// high-confidence edges still read clearly against a near-black canvas.
-const CONFIDENCE_RAMP: Record<ThemeMode, { low: string; high: string }> = {
-  light: { low: '#cde2fb', high: '#0d366b' },
-  dark: { low: '#1c3a63', high: '#86b6ef' },
-}
-
-export function categoricalColor(mode: ThemeMode, slotIndex: number): string {
+function categoricalColor(mode: ThemeMode, slotIndex: number): string {
   const slots = CATEGORICAL[mode]
-  return slotIndex < slots.length ? slots[slotIndex] : MUTED[mode]
+  return slotIndex >= 0 && slotIndex < slots.length ? slots[slotIndex] : MUTED[mode]
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+/** Stable color for an entity type: its slot in ontology definition order,
+ * or MUTED for types the ontology doesn't (or no longer) defines. */
+export function typeColor(mode: ThemeMode, entityTypeOrder: readonly string[], type: string): string {
+  return categoricalColor(mode, entityTypeOrder.indexOf(type))
 }
 
-function lerp(a: number, b: number, t: number): number {
-  return Math.round(a + (b - a) * t)
+/** Everything the graph canvas paints that isn't an entity-type color.
+ * Mirrors index.css's Obsidian-style tokens (Obsidian's own graph view uses
+ * base-35 for lines, text-muted for nodes, and the accent for focus). */
+export type GraphTheme = {
+  background: string
+  /** Node fill when "color by type" is off -- the classic monochrome look. */
+  node: string
+  /** Base link color; per-link alpha carries confidence on top of it. */
+  link: string
+  /** Hover / selection accent for links, rings, and focus glow. */
+  accent: string
+  label: string
+  labelMuted: string
+  /** Halo stroked behind label text so it stays legible over links. */
+  labelHalo: string
 }
 
-/** Confidence in [0, 1] -> a color along the sequential blue ramp. */
-export function confidenceColor(mode: ThemeMode, confidence: number): string {
-  const { low, high } = CONFIDENCE_RAMP[mode]
-  const t = Math.max(0, Math.min(1, confidence))
-  const [r1, g1, b1] = hexToRgb(low)
-  const [r2, g2, b2] = hexToRgb(high)
-  return `rgb(${lerp(r1, r2, t)}, ${lerp(g1, g2, t)}, ${lerp(b1, b2, t)})`
-}
-
-export function confidenceRampCss(mode: ThemeMode): string {
-  const { low, high } = CONFIDENCE_RAMP[mode]
-  return `linear-gradient(90deg, ${low}, ${high})`
-}
-
-/** Live-updating hook for the viewer's color scheme (system setting only --
- * this app has no explicit light/dark toggle to also account for). */
-export function useThemeMode(): ThemeMode {
-  const getMode = (): ThemeMode =>
-    window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-  const [mode, setMode] = useState(getMode)
-
-  useEffect(() => {
-    const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    const listener = () => setMode(getMode())
-    mql.addEventListener('change', listener)
-    return () => mql.removeEventListener('change', listener)
-  }, [])
-
-  return mode
+export const GRAPH_THEME: Record<ThemeMode, GraphTheme> = {
+  light: {
+    background: '#ffffff',
+    node: '#8f8f8f',
+    link: '#a9a9a9',
+    accent: '#6d4ee6',
+    label: '#222222',
+    labelMuted: '#5c5c5c',
+    labelHalo: 'rgba(255,255,255,0.92)',
+  },
+  dark: {
+    background: '#1e1e1e',
+    node: '#a8a8a8',
+    link: '#6a6a6a',
+    accent: '#8a6cef',
+    label: '#dadada',
+    labelMuted: '#9a9a9a',
+    labelHalo: 'rgba(30,30,30,0.92)',
+  },
 }

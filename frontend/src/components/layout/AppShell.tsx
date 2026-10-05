@@ -1,140 +1,278 @@
-import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
-import {
-  LayoutDashboard,
-  MessageSquare,
-  Menu,
-  Share2,
-  UploadCloud,
-  Workflow,
-  X,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Monitor, Moon, PanelLeft, Sun, Upload } from 'lucide-react'
 import { cn } from '../../lib/cn'
-import { useAppData, type BadgeState } from '../../lib/appDataContext'
+import { useAppData } from '../../lib/appDataContext'
+import { useRegisterCommands, type Command } from '../../lib/commandContext'
+import { fileIcon } from '../../lib/fileIcon'
+import { typeColor } from '../../lib/palette'
+import { MOD_KEY } from '../../lib/platform'
+import { usePersistentState } from '../../lib/storage'
+import { useTheme } from '../../lib/themeContext'
+import { useMediaQuery } from '../../lib/useMediaQuery'
+import { usePresence } from '../../lib/usePresence'
+import { CommandPalette } from '../CommandPalette'
+import { NAV_ITEMS } from './nav'
+import { Ribbon } from './Ribbon'
+import { Sidebar } from './Sidebar'
+import { StatusBar } from './StatusBar'
+import { StatusBarContext } from './statusBarContext'
+import { TitleBar } from './TitleBar'
 
-type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean }
+const SIDEBAR_MIN = 200
+const SIDEBAR_MAX = 420
+const SIDEBAR_DEFAULT = 264
 
-const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
-  { to: '/sources', label: 'Sources', icon: UploadCloud },
-  { to: '/ontology', label: 'Ontology Studio', icon: Workflow },
-  { to: '/graph', label: 'Graph Explorer', icon: Share2 },
-  { to: '/chat', label: 'Chat', icon: MessageSquare },
-]
-
-const STATE_DOT: Record<BadgeState, string> = {
-  ok: 'bg-success',
-  error: 'bg-destructive',
-  unreachable: 'bg-destructive',
-  checking: 'bg-warning animate-pulse',
-}
-
-function HealthDot({ label, state, detail }: { label: string; state: BadgeState; detail?: string }) {
-  const title = `${label}: ${state}${detail ? ` — ${detail}` : ''}`
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" title={title}>
-      <span className={cn('h-1.5 w-1.5 rounded-full', STATE_DOT[state])} aria-hidden="true" />
-      {label}
-    </span>
-  )
-}
-
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { backendState, graphState, graphDetail } = useAppData()
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-          GB
-        </div>
-        <div className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold text-foreground">Graph Buddy</span>
-          <span className="text-[11px] text-muted-foreground">Living knowledge graph</span>
-        </div>
-      </div>
-
-      <nav className="flex-1 space-y-0.5 px-3">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-              )
-            }
-          >
-            <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-
-      <div className="flex flex-col gap-1.5 border-t border-border px-5 py-4">
-        <HealthDot label="Backend" state={backendState} />
-        <HealthDot label="Graph DB" state={graphState} detail={graphDetail} />
-      </div>
-    </div>
-  )
-}
-
-/** App-wide shell: a fixed sidebar for navigation between pages (Overview,
- * Sources, Ontology Studio, Graph Explorer, Chat) plus the content outlet.
- * Replaces the old App.tsx's single scrolling column of stacked panels --
- * per docs/UI_REHAUL_PLAN.md, each of those panels is now its own route. */
+/** The app's workspace, modeled on Obsidian's: icon ribbon, collapsible +
+ * resizable explorer sidebar, a title bar over the active view, and a
+ * status bar. Every view renders into a full-height `<main>` and owns its
+ * own scrolling, so the graph can be full-bleed while document pages keep
+ * a readable column. */
 export function AppShell() {
+  const isDesktop = useMediaQuery('(min-width: 768px)')
+  const [sidebarOpen, setSidebarOpen] = usePersistentState('sidebar.open', true)
+  const [sidebarWidth, setSidebarWidth] = usePersistentState('sidebar.width', SIDEBAR_DEFAULT)
+  const [resizing, setResizing] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [statusSlot, setStatusSlot] = useState<HTMLElement | null>(null)
+  const location = useLocation()
+
+  // Any navigation closes the mobile drawer.
+  const [lastPath, setLastPath] = useState(location.pathname + location.search)
+  if (lastPath !== location.pathname + location.search) {
+    setLastPath(location.pathname + location.search)
+    setMobileNavOpen(false)
+  }
+
+  const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), [setSidebarOpen])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault()
+        setSidebarOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [setSidebarOpen])
+
+  useShellCommands(sidebarOpen, toggleSidebar)
 
   return (
-    <div className="flex min-h-svh bg-background text-foreground">
-      {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 border-r border-border bg-card md:block">
-        <SidebarContent />
-      </aside>
-
-      {/* Mobile sidebar (overlay) */}
-      {mobileNavOpen && (
-        <div className="fixed inset-0 z-40 flex md:hidden">
-          <div className="absolute inset-0 bg-black/40 animate-fade-in" onClick={() => setMobileNavOpen(false)} />
-          <div className="relative flex w-64 flex-col border-r border-border bg-card animate-slide-in-right shadow-xl">
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen(false)}
-              aria-label="Close navigation"
-              className="absolute right-3 top-4 rounded-md p-1.5 text-muted-foreground hover:bg-accent"
+    <StatusBarContext.Provider value={statusSlot}>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:rounded-md focus:bg-popover focus:px-3 focus:py-2 focus:shadow-popover"
+      >
+        Skip to content
+      </a>
+      <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
+        <div className="flex min-h-0 flex-1">
+          {isDesktop && <Ribbon sidebarOpen={sidebarOpen} onToggleSidebar={toggleSidebar} />}
+          {isDesktop && (
+            <aside
+              aria-label="Explorer"
+              inert={!sidebarOpen}
+              style={{ width: sidebarOpen ? sidebarWidth : 0 }}
+              className={cn(
+                'relative shrink-0 overflow-hidden bg-sidebar',
+                sidebarOpen && 'border-r border-border',
+                !resizing && 'transition-[width] duration-250 ease-out-expo',
+              )}
             >
-              <X className="h-4 w-4" />
-            </button>
-            <SidebarContent onNavigate={() => setMobileNavOpen(false)} />
+              <div className="h-full" style={{ width: sidebarWidth }}>
+                <Sidebar />
+              </div>
+              {sidebarOpen && (
+                <ResizeHandle
+                  width={sidebarWidth}
+                  onResize={setSidebarWidth}
+                  onResizingChange={setResizing}
+                  onReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
+                />
+              )}
+            </aside>
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <TitleBar onOpenMobileNav={() => setMobileNavOpen(true)} />
+            <main id="main" tabIndex={-1} className="relative min-h-0 flex-1 overflow-hidden outline-none">
+              <Outlet />
+            </main>
           </div>
         </div>
-      )}
+        <StatusBar slotRef={setStatusSlot} />
+      </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b border-border bg-card px-4 md:hidden">
-          <button
-            type="button"
-            onClick={() => setMobileNavOpen(true)}
-            aria-label="Open navigation"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="text-sm font-semibold">Graph Buddy</span>
-        </header>
+      {!isDesktop && <MobileNav open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />}
+      <CommandPalette />
+    </StatusBarContext.Provider>
+  )
+}
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-            <Outlet />
-          </div>
-        </main>
+function ResizeHandle({
+  width,
+  onResize,
+  onResizingChange,
+  onReset,
+}: {
+  width: number
+  onResize: (width: number) => void
+  onResizingChange: (resizing: boolean) => void
+  onReset: () => void
+}) {
+  const start = useRef<{ x: number; width: number } | null>(null)
+
+  function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    start.current = { x: e.clientX, width }
+    onResizingChange(true)
+  }
+
+  function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!start.current) return
+    onResize(Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, start.current.width + e.clientX - start.current.x))))
+  }
+
+  function onPointerUp() {
+    start.current = null
+    onResizingChange(false)
+  }
+
+  function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'ArrowLeft') onResize(Math.max(SIDEBAR_MIN, width - 16))
+    else if (e.key === 'ArrowRight') onResize(Math.min(SIDEBAR_MAX, width + 16))
+  }
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_MIN}
+      aria-valuemax={SIDEBAR_MAX}
+      tabIndex={0}
+      title="Drag to resize, double-click to reset"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onDoubleClick={onReset}
+      onKeyDown={onKeyDown}
+      className="absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none transition-colors hover:bg-accent-foreground/30 focus-visible:bg-accent-foreground/40 active:bg-accent-foreground/50"
+    />
+  )
+}
+
+function MobileNav({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { mounted, closing } = usePresence(open, 200)
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  if (!mounted) return null
+  return (
+    <div className="fixed inset-0 z-50">
+      <div
+        className={cn('absolute inset-0 bg-scrim', closing ? 'animate-fade-out' : 'animate-fade-in')}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation"
+        className={cn(
+          'relative h-full w-[288px] max-w-[85vw] border-r border-border bg-sidebar shadow-popover',
+          closing ? 'animate-fade-out' : 'animate-slide-in-left',
+        )}
+      >
+        <Sidebar showNav onNavigate={onClose} onClose={onClose} />
       </div>
     </div>
   )
+}
+
+/** Navigation, theme, sidebar, entity-type, and source commands for ⌘K. */
+function useShellCommands(sidebarOpen: boolean, toggleSidebar: () => void) {
+  const navigate = useNavigate()
+  const { mode, toggle, setPreference, preference } = useTheme()
+  const { ontology, sources } = useAppData()
+
+  const commands = useMemo<Command[]>(() => {
+    const entityOrder = ontology?.entity_types.map((et) => et.name) ?? []
+    const list: Command[] = NAV_ITEMS.map((item) => ({
+      id: `nav:${item.to}`,
+      title: item.label,
+      subtitle: item.description,
+      group: 'Navigation',
+      icon: item.icon,
+      keywords: `go to open ${item.label}`,
+      run: () => navigate(item.to),
+    }))
+    list.push(
+      {
+        id: 'theme:toggle',
+        title: mode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme',
+        group: 'Actions',
+        icon: mode === 'dark' ? Sun : Moon,
+        keywords: 'appearance color scheme dark light mode',
+        run: toggle,
+      },
+      {
+        id: 'sidebar:toggle',
+        title: sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar',
+        group: 'Actions',
+        icon: PanelLeft,
+        shortcut: [MOD_KEY, '\\'],
+        run: toggleSidebar,
+      },
+      {
+        id: 'source:upload',
+        title: 'Upload a source',
+        group: 'Actions',
+        icon: Upload,
+        keywords: 'add file document import',
+        run: () => navigate('/sources?upload=1'),
+      },
+    )
+    if (preference !== 'system') {
+      list.push({
+        id: 'theme:system',
+        title: 'Match system theme',
+        group: 'Actions',
+        icon: Monitor,
+        keywords: 'appearance automatic os',
+        run: () => setPreference('system'),
+      })
+    }
+    for (const et of ontology?.entity_types ?? []) {
+      list.push({
+        id: `type:${et.name}`,
+        title: `Show ${et.name} in graph`,
+        group: 'Entity types',
+        color: typeColor(mode, entityOrder, et.name),
+        keywords: et.description,
+        run: () => navigate(`/graph?types=${encodeURIComponent(et.name)}`),
+      })
+    }
+    for (const source of sources ?? []) {
+      list.push({
+        id: `source:${source.id}`,
+        title: source.filename,
+        group: 'Sources',
+        icon: fileIcon(source.filename),
+        subtitle: source.graphiti_status === 'extracted' ? 'extracted' : source.status,
+        run: () => navigate(`/sources?focus=${source.id}`),
+      })
+    }
+    return list
+  }, [navigate, mode, toggle, preference, setPreference, sidebarOpen, toggleSidebar, ontology, sources])
+
+  useRegisterCommands('shell', commands)
 }
