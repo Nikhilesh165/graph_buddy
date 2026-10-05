@@ -151,3 +151,67 @@ def test_chunk_source_empty_parsed_text() -> None:
         parsed_text=None,
     )
     assert chunk_source(source, settings) == []
+
+
+def test_build_entity_type_models_skips_graphiti_reserved_property_names() -> None:
+    # An LLM-bootstrapped Person very often declares `name`/`summary`;
+    # passed through, Graphiti's own validation rejects the whole model set
+    # and every chunk's add_episode fails.
+    from graphiti_core.utils.ontology_utils.entity_types_utils import validate_entity_types
+
+    entity_types = [
+        EntityType(
+            name="Person",
+            properties=[
+                PropertyDef(name="name"),
+                PropertyDef(name="summary"),
+                PropertyDef(name="job_title"),
+            ],
+        )
+    ]
+
+    models = build_entity_type_models(entity_types)
+
+    assert set(models["Person"].model_fields) == {"job_title"}
+    assert validate_entity_types(models)
+
+
+def test_build_models_skip_property_names_pydantic_cannot_take() -> None:
+    entity_types = [
+        EntityType(
+            name="Person",
+            properties=[PropertyDef(name="_secret"), PropertyDef(name="model_config")],
+        )
+    ]
+    relation_types = [
+        RelationType(
+            name="KNOWS",
+            properties=[PropertyDef(name="fact"), PropertyDef(name="since")],
+        )
+    ]
+
+    assert build_entity_type_models(entity_types)["Person"].model_fields == {}
+    assert set(build_edge_type_models(relation_types)["KNOWS"].model_fields) == {
+        "since",
+        "confidence",
+    }
+
+
+def test_chunk_prose_splits_oversized_paragraph_at_line_breaks() -> None:
+    # A PDF page / DOCX table arrives as one blank-line-free block.
+    lines = [f"line {i} " + "x" * 30 for i in range(10)]
+    text = "\n".join(lines)
+
+    chunks = chunk_prose(text, max_chars=100)
+
+    assert len(chunks) > 1
+    assert all(len(c) <= 100 for c in chunks)
+    assert "\n".join(chunks) == text  # nothing lost or reordered
+
+
+def test_chunk_csv_keeps_quoted_multiline_cell_in_its_row() -> None:
+    text = 'name,notes\nalice,"line one\nline two"\nbob,plain\n'
+
+    chunks = chunk_csv(text, rows_per_chunk=1)
+
+    assert chunks == ['name,notes\nalice,"line one\nline two"', "name,notes\nbob,plain"]

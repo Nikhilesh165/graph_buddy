@@ -152,3 +152,81 @@ def test_extract_confidence_clamped_and_missing_confidence_skipped(
     facts = {f["fact"]: f["confidence"] for f in response.json()["sample_facts"]}
     assert facts["over-confident fact"] == 1.0  # clamped, not 5.0 * 0.85
     assert facts["no confidence reported"] is None
+
+
+def _episode_rows(source_id: str) -> list:
+    from sqlmodel import Session, select
+
+    import app.core.db as db_module
+    from app.models.episode import Episode
+
+    with Session(db_module._engine) as session:
+        return list(session.exec(select(Episode).where(Episode.source_id == source_id)).all())
+
+
+def _set_graphiti_status(source_id: str, status: str) -> None:
+    from sqlmodel import Session
+
+    import app.core.db as db_module
+    from app.models.source import Source
+
+    with Session(db_module._engine) as session:
+        source = session.get(Source, source_id)
+        source.graphiti_status = status
+        session.add(source)
+        session.commit()
+
+
+def test_extract_mid_failure_still_records_provenance_of_committed_episodes(
+    client_with_extraction: tuple[TestClient, FakeGraphiti],
+) -> None:
+    from tests.conftest import FakeEpisodicNode
+
+    client, fake_graphiti = client_with_extraction
+    _put_ontology(client)
+    source = _upload_txt(client, content=(("A" * 2000) + "\n\n" + ("B" * 2000)).encode())
+    fake_graphiti.add_episode.side_effect = [
+        FakeAddEpisodeResult(nodes=[], edges=[], episode=FakeEpisodicNode(uuid="ep-committed")),
+        RuntimeError("LLM call failed"),
+    ]
+
+    response = client.post(f"/sources/{source['id']}/extract")
+
+    assert response.status_code == 502
+    # The first chunk's episode is in the graph -- its provenance row must be
+    # too, or the Graph Explorer can't trace its entities back to this file.
+    rows = _episode_rows(source["id"])
+    assert [(r.episode_uuid, r.chunk_index) for r in rows] == [("ep-committed", 0)]
+
+
+def test_extract_while_already_extracting_is_409(
+    client_with_extraction: tuple[TestClient, FakeGraphiti],
+) -> None:
+    client, fake_graphiti = client_with_extraction
+    _put_ontology(client)
+    source = _upload_txt(client)
+    _set_graphiti_status(source["id"], "extracting")
+
+    response = client.post(f"/sources/{source['id']}/extract")
+
+    assert response.status_code == 409
+    fake_graphiti.add_episode.assert_not_called()
+
+
+def test_startup_marks_orphaned_extracting_sources_failed(monkeypatch) -> None:
+    import app.core.graphiti_client as graphiti_client_module
+    from app.main import create_app
+
+    monkeypatch.setattr(
+        graphiti_client_module, "build_graphiti", lambda settings: FakeGraphiti(True)
+    )
+    with TestClient(create_app()) as client:
+        source = _upload_txt(client)
+        _set_graphiti_status(source["id"], "extracting")
+
+    # A fresh process can't have anything mid-extraction.
+    with TestClient(create_app()) as client:
+        fetched = client.get(f"/sources/{source['id']}").json()
+
+    assert fetched["graphiti_status"] == "failed"
+    assert "interrupted" in fetched["graphiti_error"]

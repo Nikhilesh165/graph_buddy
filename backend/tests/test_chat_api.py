@@ -136,3 +136,43 @@ def test_chat_trace_unknown_turn_is_404(
     response = client.get("/chat/does-not-exist/trace")
 
     assert response.status_code == 404
+
+
+def test_chat_history_returns_most_recent_turns_oldest_first(
+    client_with_extraction: tuple[TestClient, FakeGraphiti],
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from sqlmodel import Session
+
+    import app.core.db as db_module
+    from app.models.chat import ChatTurn
+
+    client, _ = client_with_extraction
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    with Session(db_module._engine) as session:
+        for i in range(3):
+            session.add(
+                ChatTurn(
+                    id=f"t{i}",
+                    question=f"q{i}",
+                    answer="a",
+                    retrieved_count=0,
+                    created_at=start + timedelta(minutes=i),
+                )
+            )
+        session.commit()
+
+    history = client.get("/chat/history", params={"limit": 2}).json()
+
+    # The *newest* two, in transcript order -- not the oldest two.
+    assert [t["id"] for t in history] == ["t1", "t2"]
+    assert history[0]["created_at"].endswith("+00:00")
+
+
+def test_chat_history_rejects_non_positive_limit(
+    client_with_extraction: tuple[TestClient, FakeGraphiti],
+) -> None:
+    client, _ = client_with_extraction
+
+    assert client.get("/chat/history", params={"limit": 0}).status_code == 422

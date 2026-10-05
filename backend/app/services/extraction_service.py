@@ -14,6 +14,8 @@ source-type reliability and persist the result via `EntityEdge.save()`.
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,13 +23,16 @@ from pathlib import Path
 from typing import Any
 
 from graphiti_core import Graphiti
-from graphiti_core.nodes import EpisodeType
+from graphiti_core.edges import EntityEdge
+from graphiti_core.nodes import EntityNode, EpisodeType
 from pydantic import BaseModel, create_model
 from pydantic import Field as PydanticField
+from sqlmodel import Session, select
 
 from app.core.config import Settings
 from app.models.ontology import EntityType, OntologyVersion, RelationType
 from app.models.source import Source
+from app.services.ontology_service import is_valid_property_name
 
 PROPERTY_TYPE_MAP: dict[str, type] = {
     "string": str,
@@ -71,20 +76,37 @@ def reliability_weight(filename: str) -> float:
     return SOURCE_RELIABILITY_WEIGHT.get(Path(filename).suffix.lower(), DEFAULT_RELIABILITY_WEIGHT)
 
 
-def _property_fields(properties: list) -> dict[str, Any]:
+# Graphiti's own fields on the EntityNode/EntityEdge it builds from these
+# models. A same-named ontology property (an LLM-bootstrapped `Person.name`
+# is the classic case) duplicates a built-in -- and for entity types it's
+# fatal: `add_episode` runs `validate_entity_types`, which raises
+# EntityTypeValidationError and fails the whole extraction. For edges it's
+# silently dropped at save time anyway (`EntityEdge.save` never lets an
+# attribute overwrite a core field). So such properties are skipped here.
+RESERVED_ENTITY_PROPERTIES: frozenset[str] = frozenset(EntityNode.model_fields)
+RESERVED_EDGE_PROPERTIES: frozenset[str] = frozenset(EntityEdge.model_fields)
+
+
+def _property_fields(properties: list, reserved: frozenset[str]) -> dict[str, Any]:
+    # Names Pydantic can't take as a field (leading underscore, its own
+    # `model_` namespace, ...) are skipped too, so an ontology stored before
+    # PUT /ontology validated names can't crash `create_model`.
     return {
         prop.name: (
             PROPERTY_TYPE_MAP.get(prop.type.lower(), str) | None,
             PydanticField(default=None, description=prop.description),
         )
         for prop in properties
+        if prop.name not in reserved and is_valid_property_name(prop.name)
     }
 
 
 def build_entity_type_models(entity_types: list[EntityType]) -> dict[str, type[BaseModel]]:
     return {
         et.name: create_model(
-            et.name, __doc__=et.description or None, **_property_fields(et.properties)
+            et.name,
+            __doc__=et.description or None,
+            **_property_fields(et.properties, RESERVED_ENTITY_PROPERTIES),
         )
         for et in entity_types
     }
@@ -93,7 +115,7 @@ def build_entity_type_models(entity_types: list[EntityType]) -> dict[str, type[B
 def build_edge_type_models(relation_types: list[RelationType]) -> dict[str, type[BaseModel]]:
     models: dict[str, type[BaseModel]] = {}
     for rt in relation_types:
-        fields = _property_fields(rt.properties)
+        fields = _property_fields(rt.properties, RESERVED_EDGE_PROPERTIES)
         # Always wins over a same-named ontology property -- confidence is a
         # system-level field, not something the ontology should be able to
         # accidentally shadow.
@@ -116,43 +138,71 @@ def build_edge_type_map(relation_types: list[RelationType]) -> dict[tuple[str, s
     return edge_map
 
 
+def _pack(pieces: list[str], max_chars: int, separator: str) -> list[str]:
+    """Greedily pack consecutive pieces into chunks of at most `max_chars`
+    (a single piece longer than that becomes its own oversized chunk)."""
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for piece in pieces:
+        if current and current_len + len(piece) + len(separator) > max_chars:
+            chunks.append(separator.join(current))
+            current, current_len = [], 0
+        current.append(piece)
+        current_len += len(piece) + len(separator)
+    if current:
+        chunks.append(separator.join(current))
+    return chunks
+
+
 def chunk_prose(text: str, max_chars: int) -> list[str]:
-    """Paragraph-packing: never splits a paragraph, packs consecutive ones up
-    to `max_chars`. A single paragraph longer than `max_chars` is its own
-    (oversized) chunk rather than being hard-split mid-sentence.
+    """Paragraph-packing: packs consecutive paragraphs up to `max_chars`.
+
+    A paragraph longer than `max_chars` is broken at its line breaks and its
+    lines packed the same way -- extracted PDF pages and DOCX tables arrive
+    as one blank-line-free block, and passing those through whole produced
+    unbounded episodes (one per page, or one for the whole document). Text
+    is never hard-split mid-line: a single line longer than `max_chars` is
+    still its own (oversized) chunk.
     """
     paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
     if not paragraphs:
         return [text] if text.strip() else []
 
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
+    units: list[str] = []
     for paragraph in paragraphs:
-        if current and current_len + len(paragraph) + 2 > max_chars:
-            chunks.append("\n\n".join(current))
-            current, current_len = [], 0
-        current.append(paragraph)
-        current_len += len(paragraph) + 2
-    if current:
-        chunks.append("\n\n".join(current))
-    return chunks
+        if len(paragraph) > max_chars:
+            lines = [line for line in paragraph.split("\n") if line.strip()]
+            units.extend(_pack(lines, max_chars, "\n"))
+        else:
+            units.append(paragraph)
+    return _pack(units, max_chars, "\n\n")
 
 
 def chunk_csv(text: str, rows_per_chunk: int) -> list[str]:
     """Row-batching with the header repeated in every chunk, so each episode
     is schema-aware on its own (ARCHITECTURE.md §3.1: tables kept as tables).
+
+    Rows are read with the csv module rather than split on newlines, so a
+    quoted cell containing a line break stays inside its row instead of
+    being cut in two at a chunk boundary.
     """
-    lines = text.splitlines()
-    if not lines:
-        return []
-    header, rows = lines[0], lines[1:]
+    rows = [row for row in csv.reader(io.StringIO(text)) if row]
     if not rows:
-        return [header]
+        return []
+    header, body = rows[0], rows[1:]
+    if not body:
+        return [_write_csv_rows([header])]
     return [
-        "\n".join([header, *rows[i : i + rows_per_chunk]])
-        for i in range(0, len(rows), rows_per_chunk)
+        _write_csv_rows([header, *body[i : i + rows_per_chunk]])
+        for i in range(0, len(body), rows_per_chunk)
     ]
+
+
+def _write_csv_rows(rows: list[list[str]]) -> str:
+    buffer = io.StringIO()
+    csv.writer(buffer, lineterminator="\n").writerows(rows)
+    return buffer.getvalue().rstrip("\n")
 
 
 def chunk_source(source: Source, settings: Settings) -> list[str]:
@@ -195,6 +245,39 @@ class ExtractionSummary:
 
 MAX_SAMPLE_FACTS = 20
 
+INTERRUPTED_EXTRACTION_ERROR = "Extraction was interrupted (the server stopped mid-run)"
+
+
+class ExtractionError(Exception):
+    """Extraction failed partway through. Graphiti commits per-episode, so
+    `summary` carries the episodes that were already written before the
+    failure -- the route still persists their provenance rows, since those
+    episodes really are in the graph (app/models/episode.py: one row per
+    episode Graphiti actually created).
+    """
+
+    def __init__(self, cause: Exception, summary: ExtractionSummary) -> None:
+        super().__init__(str(cause))
+        self.summary = summary
+
+
+def mark_interrupted_extractions(session: Session) -> int:
+    """Flip any source left at graphiti_status="extracting" to "failed".
+
+    Run at startup: nothing can be mid-extraction in a process that just
+    started, so such a row was orphaned by a crash/restart. Left alone it
+    would read as in-progress forever and block re-extraction (see the 409
+    guard in app/api/routes/sources.py).
+    """
+    stale = session.exec(select(Source).where(Source.graphiti_status == "extracting")).all()
+    for source in stale:
+        source.graphiti_status = "failed"
+        source.graphiti_error = INTERRUPTED_EXTRACTION_ERROR
+        session.add(source)
+    if stale:
+        session.commit()
+    return len(stale)
+
 
 async def extract_source(
     graphiti: Graphiti, source: Source, ontology: OntologyVersion, settings: Settings
@@ -213,38 +296,46 @@ async def extract_source(
     edges_seen: set[str] = set()
     sampled_edge_uuids: set[str] = set()
 
-    for index, chunk in enumerate(chunks):
-        result = await graphiti.add_episode(
-            name=f"{source.filename} #{index + 1}",
-            episode_body=chunk,
-            source_description=f"Uploaded file: {source.filename}",
-            reference_time=datetime.now(UTC),
-            source=EpisodeType.text,
-            entity_types=entity_type_models,
-            edge_types=edge_type_models,
-            edge_type_map=edge_type_map,
-        )
-        summary.episodes_added += 1
-        summary.episode_records.append(
-            EpisodeRecord(
-                chunk_index=index,
-                episode_uuid=result.episode.uuid,
-                chunk_preview=chunk[:EPISODE_PREVIEW_CHARS],
+    try:
+        for index, chunk in enumerate(chunks):
+            result = await graphiti.add_episode(
+                name=f"{source.filename} #{index + 1}",
+                episode_body=chunk,
+                source_description=f"Uploaded file: {source.filename}",
+                reference_time=datetime.now(UTC),
+                source=EpisodeType.text,
+                entity_types=entity_type_models,
+                edge_types=edge_type_models,
+                edge_type_map=edge_type_map,
             )
-        )
-        nodes_seen.update(node.uuid for node in result.nodes)
-
-        for edge in result.edges:
-            edges_seen.add(edge.uuid)
-            raw_confidence = edge.attributes.get("confidence")
-            if isinstance(raw_confidence, int | float):
-                edge.attributes["confidence"] = max(0.0, min(1.0, float(raw_confidence) * weight))
-                await edge.save(graphiti.driver)
-            if edge.uuid not in sampled_edge_uuids and len(summary.sample_facts) < MAX_SAMPLE_FACTS:
-                sampled_edge_uuids.add(edge.uuid)
-                summary.sample_facts.append(
-                    SampleFact(fact=edge.fact, confidence=edge.attributes.get("confidence"))
+            summary.episodes_added += 1
+            summary.episode_records.append(
+                EpisodeRecord(
+                    chunk_index=index,
+                    episode_uuid=result.episode.uuid,
+                    chunk_preview=chunk[:EPISODE_PREVIEW_CHARS],
                 )
+            )
+            nodes_seen.update(node.uuid for node in result.nodes)
+
+            for edge in result.edges:
+                edges_seen.add(edge.uuid)
+                raw_confidence = edge.attributes.get("confidence")
+                if isinstance(raw_confidence, int | float):
+                    edge.attributes["confidence"] = max(
+                        0.0, min(1.0, float(raw_confidence) * weight)
+                    )
+                    await edge.save(graphiti.driver)
+                if (
+                    edge.uuid not in sampled_edge_uuids
+                    and len(summary.sample_facts) < MAX_SAMPLE_FACTS
+                ):
+                    sampled_edge_uuids.add(edge.uuid)
+                    summary.sample_facts.append(
+                        SampleFact(fact=edge.fact, confidence=edge.attributes.get("confidence"))
+                    )
+    except Exception as exc:
+        raise ExtractionError(exc, summary) from exc
 
     summary.nodes_touched = len(nodes_seen)
     summary.edges_touched = len(edges_seen)

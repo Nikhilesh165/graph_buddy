@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
+from app.models.utc_datetime import UTCDateTime
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -33,4 +35,4 @@ class RetrievalTraceRecord(SQLModel, table=True):
     # mirrors chat_service.RetrievedFact.
     facts: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     final_context: str
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = Field(default_factory=_now, sa_type=UTCDateTime)

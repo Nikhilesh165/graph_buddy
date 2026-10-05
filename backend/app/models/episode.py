@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 
 from sqlmodel import Field, SQLModel
 
+from app.models.utc_datetime import UTCDateTime
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -30,4 +32,4 @@ class Episode(SQLModel, table=True):
     source_id: str = Field(foreign_key="source.id", index=True)
     chunk_index: int
     chunk_preview: str
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = Field(default_factory=_now, sa_type=UTCDateTime)

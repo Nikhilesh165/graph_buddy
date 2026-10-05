@@ -162,3 +162,23 @@ def test_get_node_resolves_provenance_to_source(
     assert item["source_id"] == source["id"]
     assert item["source_filename"] == "note.txt"
     assert item["chunk_preview"] == "Alice knows Bob."
+
+
+def test_get_graph_naive_valid_window_is_treated_as_utc(
+    client_with_extraction: tuple[TestClient, FakeGraphiti],
+) -> None:
+    from datetime import UTC
+
+    client, fake_graphiti = client_with_extraction
+    fake_graphiti.driver.execute_query.return_value = ([], None, None)
+
+    response = client.get(
+        "/graph", params={"valid_from": "2024-01-01T00:00:00", "valid_to": "2024-12-31"}
+    )
+
+    assert response.status_code == 200
+    _, kwargs = fake_graphiti.driver.execute_query.call_args
+    # A naive datetime would reach Neo4j as a LocalDateTime, and comparing
+    # that to Graphiti's zoned valid_at yields null (every dated edge dropped).
+    assert kwargs["valid_from"].tzinfo == UTC
+    assert kwargs["valid_to"].tzinfo == UTC

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlmodel import Session
 
 from app.api.routes.chat import router as chat_router
 from app.api.routes.graph import router as graph_router
@@ -12,6 +13,7 @@ from app.api.routes.sources import router as sources_router
 from app.core.config import get_settings
 from app.core.db import create_db_and_tables, init_engine
 from app.core.graphiti_client import GraphitiState
+from app.services.extraction_service import mark_interrupted_extractions
 
 
 @asynccontextmanager
@@ -23,6 +25,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     engine = init_engine(settings)
     create_db_and_tables(engine)
+    with Session(engine) as session:
+        mark_interrupted_extractions(session)
 
     graphiti_state = GraphitiState(settings)
     await graphiti_state.startup()

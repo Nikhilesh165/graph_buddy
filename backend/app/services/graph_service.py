@@ -36,6 +36,24 @@ BASE_ENTITY_LABEL = "Entity"
 DEFAULT_LIMIT = 300
 MAX_LIMIT = 1000
 
+# On Neo4j, `EntityNode.save` flattens the node's ontology attributes into
+# top-level node properties alongside Graphiti's own core fields -- there is
+# no `attributes` property to read back (graphiti_core's own reader uses
+# `properties(n)` and pops these same keys). Reading `n.attributes` returned
+# null, so every node's extracted properties were silently dropped. These are
+# excluded in Cypher itself so the ~1.5k-float `name_embedding` never leaves
+# the database.
+RESERVED_NODE_PROPERTIES = [
+    "uuid",
+    "name",
+    "name_embedding",
+    "group_id",
+    "summary",
+    "created_at",
+    "labels",
+    "attributes",
+]
+
 
 def _primary_type(labels: list[str] | None) -> str:
     for label in labels or []:
@@ -108,6 +126,19 @@ class NodeDetail:
     provenance: list[ProvenanceItem]
 
 
+def _node_attributes_cypher(var: str) -> str:
+    """Cypher for a node's ontology attributes as `[key, value]` pairs (plain
+    Cypher has no map-filter without APOC)."""
+    return f"[k IN keys({var}) WHERE NOT k IN $reserved_node_properties | [k, {var}[k]]]"
+
+
+def _attributes_from_row(value: Any) -> dict[str, Any]:
+    if not value:
+        return {}
+    pairs = value.items() if isinstance(value, dict) else value
+    return {k: v for k, v in pairs if k not in RESERVED_NODE_PROPERTIES}
+
+
 def _node_from_prefixed_row(row: dict[str, Any], prefix: str) -> GraphNode:
     labels = row.get(f"{prefix}_labels") or []
     return GraphNode(
@@ -116,7 +147,7 @@ def _node_from_prefixed_row(row: dict[str, Any], prefix: str) -> GraphNode:
         type=_primary_type(labels),
         labels=labels,
         summary=row.get(f"{prefix}_summary") or "",
-        attributes=row.get(f"{prefix}_attributes") or {},
+        attributes=_attributes_from_row(row.get(f"{prefix}_attributes")),
     )
 
 
@@ -150,7 +181,11 @@ async def query_graph(graphiti: Graphiti, filters: GraphFilters) -> GraphQueryRe
     # meant to be surfaced/filterable everywhere (ARCHITECTURE.md §3.7), and
     # a fact nobody scored shouldn't silently bypass a "show me >= 0.8" query.
     where_clauses = ["coalesce(e.confidence, 0.0) >= $min_confidence"]
-    params: dict[str, Any] = {"min_confidence": filters.min_confidence, "limit": limit + 1}
+    params: dict[str, Any] = {
+        "min_confidence": filters.min_confidence,
+        "limit": limit + 1,
+        "reserved_node_properties": RESERVED_NODE_PROPERTIES,
+    }
 
     if filters.relation_types:
         where_clauses.append("e.name IN $relation_types")
@@ -186,9 +221,9 @@ async def query_graph(graphiti: Graphiti, filters: GraphFilters) -> GraphQueryRe
             e.valid_at AS valid_at, e.invalid_at AS invalid_at, e.created_at AS created_at,
             e.episodes AS episodes,
             n.uuid AS source_uuid, n.name AS source_name, labels(n) AS source_labels,
-            n.summary AS source_summary, n.attributes AS source_attributes,
+            n.summary AS source_summary, {_node_attributes_cypher("n")} AS source_attributes,
             m.uuid AS target_uuid, m.name AS target_name, labels(m) AS target_labels,
-            m.summary AS target_summary, m.attributes AS target_attributes
+            m.summary AS target_summary, {_node_attributes_cypher("m")} AS target_attributes
         ORDER BY e.created_at DESC
         LIMIT $limit
     """
@@ -213,13 +248,16 @@ async def query_graph(graphiti: Graphiti, filters: GraphFilters) -> GraphQueryRe
 
 
 async def get_node_detail(graphiti: Graphiti, node_uuid: str) -> NodeDetail | None:
-    node_query = """
-        MATCH (n:Entity {uuid: $uuid})
+    node_query = f"""
+        MATCH (n:Entity {{uuid: $uuid}})
         RETURN n.uuid AS uuid, n.name AS name, labels(n) AS labels, n.summary AS summary,
-               n.attributes AS attributes, n.created_at AS created_at
+               {_node_attributes_cypher("n")} AS attributes, n.created_at AS created_at
     """
     node_records, _, _ = await graphiti.driver.execute_query(
-        node_query, uuid=node_uuid, routing_="r"
+        node_query,
+        uuid=node_uuid,
+        reserved_node_properties=RESERVED_NODE_PROPERTIES,
+        routing_="r",
     )
     if not node_records:
         return None
@@ -231,23 +269,26 @@ async def get_node_detail(graphiti: Graphiti, node_uuid: str) -> NodeDetail | No
         type=_primary_type(node_row.get("labels")),
         labels=node_row.get("labels") or [],
         summary=node_row.get("summary") or "",
-        attributes=node_row.get("attributes") or {},
+        attributes=_attributes_from_row(node_row.get("attributes")),
         created_at=parse_db_date(node_row.get("created_at")),
     )
 
     # Undirected match + `startNode(e)` to recover direction -- `n` in the
     # pattern below is *not* necessarily the relationship's start node.
-    neighbor_query = """
-        MATCH (n:Entity {uuid: $uuid})-[e:RELATES_TO]-(m:Entity)
+    neighbor_query = f"""
+        MATCH (n:Entity {{uuid: $uuid}})-[e:RELATES_TO]-(m:Entity)
         RETURN e.uuid AS uuid, e.name AS name, e.fact AS fact, e.confidence AS confidence,
                e.valid_at AS valid_at, e.invalid_at AS invalid_at, e.created_at AS created_at,
                e.episodes AS episodes,
                startNode(e).uuid AS start_uuid,
                m.uuid AS other_uuid, m.name AS other_name, labels(m) AS other_labels,
-               m.summary AS other_summary, m.attributes AS other_attributes
+               m.summary AS other_summary, {_node_attributes_cypher("m")} AS other_attributes
     """
     neighbor_records, _, _ = await graphiti.driver.execute_query(
-        neighbor_query, uuid=node_uuid, routing_="r"
+        neighbor_query,
+        uuid=node_uuid,
+        reserved_node_properties=RESERVED_NODE_PROPERTIES,
+        routing_="r",
     )
 
     neighbors: list[NodeNeighbor] = []

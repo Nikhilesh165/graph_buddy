@@ -69,3 +69,38 @@ def test_parse_unsupported_extension(tmp_path: Path) -> None:
 
     with pytest.raises(UnsupportedFileType):
         parse_file(path, "application/octet-stream")
+
+
+def test_parse_docx_keeps_tables_and_paragraph_breaks(tmp_path: Path) -> None:
+    path = tmp_path / "doc.docx"
+    document = Document()
+    document.add_paragraph("Intro paragraph")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Name"
+    table.cell(0, 1).text = "Role"
+    table.cell(1, 0).text = "Ada"
+    table.cell(1, 1).text = "CTO"
+    document.add_paragraph("Closing paragraph")
+    document.save(path)
+
+    result = parse_file(path, "")
+
+    assert result.text == "Intro paragraph\n\nName | Role\nAda | CTO\n\nClosing paragraph"
+
+
+def test_parse_csv_keeps_cell_values_literal(tmp_path: Path) -> None:
+    path = tmp_path / "data.csv"
+    path.write_text("id,zip,status\n1,02134,NA\n2,,active\n", encoding="utf-8")
+
+    result = parse_file(path, "text/csv")
+
+    # No "2134", no "1.0"/"2.0" float coercion from the blank, "NA" kept.
+    assert result.text.splitlines() == ["id,zip,status", "1,02134,NA", "2,,active"]
+    assert result.row_count == 2
+
+
+def test_parse_txt_strips_utf8_bom(tmp_path: Path) -> None:
+    path = tmp_path / "note.txt"
+    path.write_bytes("﻿hello".encode())
+
+    assert parse_file(path, "text/plain").text == "hello"

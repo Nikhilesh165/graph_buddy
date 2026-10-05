@@ -15,6 +15,8 @@ from typing import Literal
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
 
+from app.models.utc_datetime import UTCDateTime
+
 SourceStatus = Literal["uploaded", "parsed", "failed"]
 GraphitiStatus = Literal["not_extracted", "extracting", "extracted", "failed"]
 
@@ -39,7 +41,7 @@ class Source(SQLModel, table=True):
     parsed_text: str | None = None
     char_count: int = 0
     row_count: int | None = None  # set for CSV sources
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = Field(default_factory=_now, sa_type=UTCDateTime)
 
     # Plain str at the table level, same reason as `status` above.
     graphiti_status: str = "not_extracted"
@@ -47,7 +49,7 @@ class Source(SQLModel, table=True):
     episode_count: int = 0
     node_count: int = 0
     edge_count: int = 0
-    extracted_at: datetime | None = None
+    extracted_at: datetime | None = Field(default=None, sa_type=UTCDateTime)
 
     def preview(self, chars: int = 500) -> str | None:
         return self.parsed_text[:chars] if self.parsed_text else None

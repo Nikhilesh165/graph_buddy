@@ -4,7 +4,7 @@ app/services/graph_service.py for the underlying Cypher.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -92,6 +92,17 @@ def _edge_read(edge: graph_service.GraphEdge) -> GraphEdgeRead:
     )
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Treat a timezone-less query param (e.g. `?valid_from=2024-01-01`) as
+    UTC. The neo4j driver sends a naive datetime as a Cypher LocalDateTime,
+    and comparing that against Graphiti's zoned `valid_at` DateTime yields
+    null -- which silently filtered out every dated edge.
+    """
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
 async def _require_connected_graphiti(request: Request):
     graphiti_state = request.app.state.graphiti_state
     connected, error = await graphiti_state.check_connectivity()
@@ -119,8 +130,8 @@ async def get_graph(
             entity_types=entity_types or None,
             relation_types=relation_types or None,
             min_confidence=min_confidence,
-            valid_from=valid_from,
-            valid_to=valid_to,
+            valid_from=_as_utc(valid_from),
+            valid_to=_as_utc(valid_to),
             search=search,
             limit=limit,
         ),

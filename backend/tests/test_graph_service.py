@@ -164,3 +164,51 @@ async def test_get_node_detail_assembles_neighbors_and_provenance() -> None:
     assert neighbor.edge.target_uuid == "n-bob"
     assert len(detail.provenance) == 1
     assert detail.provenance[0].episode_uuid == "ep-1"
+
+
+async def test_query_graph_reads_flattened_node_properties_as_attributes() -> None:
+    # Graphiti flattens EntityNode.attributes into top-level node properties
+    # on Neo4j; the query returns them as [key, value] pairs.
+    graphiti = _fake_graphiti(
+        [
+            _edge_row(
+                source_attributes=[
+                    ["role", "CTO"],
+                    ["age", 41],
+                    ["name_embedding", [0.1, 0.2]],
+                    ["uuid", "n-alice"],
+                ],
+                target_attributes=[],
+            )
+        ]
+    )
+
+    result = await graph_service.query_graph(graphiti, graph_service.GraphFilters())
+
+    alice = next(n for n in result.nodes if n.uuid == "n-alice")
+    assert alice.attributes == {"role": "CTO", "age": 41}
+    cypher, kwargs = graphiti.driver.execute_query.call_args
+    assert "n.attributes" not in cypher[0]
+    assert "name_embedding" in kwargs["reserved_node_properties"]
+
+
+async def test_get_node_detail_strips_reserved_properties_from_attributes() -> None:
+    driver = FakeDriver(should_connect=True)
+    node_row = {
+        "uuid": "n-alice",
+        "name": "Alice",
+        "labels": ["Entity", "Person"],
+        "summary": "",
+        "attributes": [["role", "CTO"], ["summary", "dup"]],
+        "created_at": None,
+    }
+    driver.execute_query.side_effect = [
+        ([node_row], None, None),
+        ([], None, None),
+        ([], None, None),
+    ]
+
+    detail = await graph_service.get_node_detail(SimpleNamespace(driver=driver), "n-alice")
+
+    assert detail is not None
+    assert detail.node.attributes == {"role": "CTO"}

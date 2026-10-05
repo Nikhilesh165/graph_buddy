@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pdfplumber
 from docx import Document
+from docx.table import Table
 
 from app.models.source import SUPPORTED_EXTENSIONS
 
@@ -47,7 +48,9 @@ def parse_file(path: Path, content_type: str) -> ParsedContent:
 
 
 def _parse_text(path: Path) -> ParsedContent:
-    text = path.read_text(encoding="utf-8", errors="replace")
+    # utf-8-sig: drop the BOM Windows editors prepend, rather than leaking a
+    # U+FEFF into the first chunk/episode.
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
     return ParsedContent(text=text, char_count=len(text))
 
 
@@ -62,12 +65,33 @@ def _parse_pdf(path: Path) -> ParsedContent:
 
 
 def _parse_docx(path: Path) -> ParsedContent:
+    # Body paragraphs *and* tables, in document order -- `document.paragraphs`
+    # alone silently drops every table. Blocks are blank-line separated
+    # because each one really is a paragraph: joined with single newlines, the
+    # paragraph-packing chunker (extraction_service.chunk_prose) saw the
+    # whole document as one paragraph and never split it.
     document = Document(path)
-    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    blocks: list[str] = []
+    for block in document.iter_inner_content():
+        block_text = _docx_table_text(block) if isinstance(block, Table) else block.text
+        if block_text.strip():
+            blocks.append(block_text)
+    text = "\n\n".join(blocks)
     return ParsedContent(text=text, char_count=len(text))
 
 
+def _docx_table_text(table: Table) -> str:
+    """One line per row, cells separated by " | " -- kept as rows rather
+    than flattened into prose (ARCHITECTURE.md §3.1)."""
+    rows = (" | ".join(cell.text.strip() for cell in row.cells) for row in table.rows)
+    return "\n".join(row for row in rows if row.strip(" |"))
+
+
 def _parse_csv(path: Path) -> ParsedContent:
-    df = pd.read_csv(path)
+    # Every cell kept as the literal text the user typed: by default pandas
+    # infers types, so "02134" became "2134", an integer column with a blank
+    # became floats ("42" -> "42.0"), and "NA"/"N/A"/"null" became empty --
+    # for the source type extraction trusts most (reliability weight 1.0).
+    df = pd.read_csv(path, dtype=str, keep_default_na=False, encoding_errors="replace")
     text = df.to_csv(index=False)
     return ParsedContent(text=text, char_count=len(text), row_count=len(df))

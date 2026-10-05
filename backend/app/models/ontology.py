@@ -18,6 +18,8 @@ from pydantic import Field as PydanticField
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
+from app.models.utc_datetime import UTCDateTime
+
 OntologyVersionSource = Literal["bootstrap", "user_edit"]
 
 
@@ -97,7 +99,7 @@ class OntologyVersion(SQLModel, table=True):
     created_by: str
     source_id: str | None = None
     diff: dict | None = Field(default=None, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=_now)
+    created_at: datetime = Field(default_factory=_now, sa_type=UTCDateTime)
 
     def entity_types_typed(self) -> list[EntityType]:
         return [EntityType.model_validate(d) for d in self.entity_types]

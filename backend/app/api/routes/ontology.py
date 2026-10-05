@@ -58,6 +58,20 @@ async def bootstrap_ontology(
         logger.warning("Ontology bootstrap failed for source %s: %s", body.source_id, exc)
         raise HTTPException(status_code=502, detail=f"Ontology bootstrap failed: {exc}") from exc
 
+    problems = ontology_service.validate_ontology(proposal.entity_types, proposal.relation_types)
+    if problems:
+        logger.warning(
+            "Bootstrap proposed an invalid ontology for %s: %s", body.source_id, problems
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Ontology bootstrap proposed an unusable ontology ("
+                + "; ".join(problems)
+                + "). Try again, or define the ontology by hand."
+            ),
+        )
+
     version = ontology_service.save_new_version(
         session,
         proposal.entity_types,
@@ -72,6 +86,12 @@ async def bootstrap_ontology(
 def update_ontology(
     body: OntologyProposal, session: Session = Depends(get_session)
 ) -> OntologyVersionRead:
+    # Rejected here rather than at extraction time, where e.g. an entity type
+    # with a space in its name (an invalid graph label) or a blank card saved
+    # from the Studio fails every chunk with a Graphiti validation error.
+    problems = ontology_service.validate_ontology(body.entity_types, body.relation_types)
+    if problems:
+        raise HTTPException(status_code=422, detail="Invalid ontology: " + "; ".join(problems))
     version = ontology_service.save_new_version(
         session, body.entity_types, body.relation_types, created_by="user_edit"
     )

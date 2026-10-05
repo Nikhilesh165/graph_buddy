@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 DEFAULT_HISTORY_LIMIT = 50
+MAX_HISTORY_LIMIT = 500
 
 
 class ChatRequest(BaseModel):
@@ -94,10 +95,17 @@ class RetrievalTraceRead(BaseModel):
 
 @router.get("/history", response_model=list[ChatTurnRead])
 def get_history(
-    session: Session = Depends(get_session), limit: int = DEFAULT_HISTORY_LIMIT
+    session: Session = Depends(get_session),
+    limit: int = Query(default=DEFAULT_HISTORY_LIMIT, ge=1, le=MAX_HISTORY_LIMIT),
 ) -> list[ChatTurnRead]:
-    statement = select(ChatTurn).order_by(ChatTurn.created_at.asc()).limit(limit)
-    return [ChatTurnRead.from_turn(t) for t in session.exec(statement).all()]
+    """The most recent `limit` turns, returned oldest-first (transcript
+    order). Selecting newest-first before limiting matters: ordering
+    ascending and limiting would return the *oldest* turns, so once the log
+    outgrew the limit, new turns would vanish from a reloaded transcript.
+    """
+    statement = select(ChatTurn).order_by(ChatTurn.created_at.desc()).limit(limit)
+    turns = session.exec(statement).all()
+    return [ChatTurnRead.from_turn(t) for t in reversed(turns)]
 
 
 @router.post("", response_model=ChatTurnRead)
@@ -138,12 +146,12 @@ async def ask(
         retrieved_count=len(result.trace.facts),
     )
     session.add(turn)
-    session.commit()
-    session.refresh(turn)
 
     # Persist the trace regardless of whether any facts came back -- even a
     # "nothing relevant" answer is worth being able to inspect (empty
-    # seed_nodes/facts, per this module's docstring).
+    # seed_nodes/facts, per this module's docstring). Committed together with
+    # the turn (its id is minted client-side, so no flush is needed first) so
+    # a turn can never be persisted without the trace "Explain" reads.
     session.add(
         RetrievalTraceRecord(
             turn_id=turn.id,
@@ -174,6 +182,7 @@ async def ask(
         )
     )
     session.commit()
+    session.refresh(turn)
 
     return ChatTurnRead.from_turn(turn)
 
