@@ -23,7 +23,7 @@ def test_ground_plan_canonicalizes_and_drops_unknown_types() -> None:
             TermMapping(term="clients", kind="entity_type", maps_to="CUSTOMER"),
             TermMapping(term="bills", kind="entity_type", maps_to="Invoice"),
         ],
-        unmapped_terms=["invoices", "ticket"],
+        unmapped_terms=["invoices", "ticket", "Tickets"],
     )
 
     resolved = chat_service.ground_plan(plan, ENTITIES, RELATIONS)
@@ -32,7 +32,8 @@ def test_ground_plan_canonicalizes_and_drops_unknown_types() -> None:
     assert resolved.plan.relation_types == ["FILED"]
     assert resolved.plan.entity_mentions[0].entity_type == "Customer"
     assert [(m.term, m.maps_to) for m in resolved.plan.term_mappings] == [("clients", "Customer")]
-    # "ticket" is a type name, so it isn't a gap even if the resolver said so.
+    # "ticket"/"Tickets" name a type, so they aren't gaps even if the
+    # resolver said so.
     assert resolved.plan.unmapped_terms == ["invoices"]
     # Explicit relation types win over derived ones.
     assert resolved.edge_types == ["FILED"]

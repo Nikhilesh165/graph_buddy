@@ -199,3 +199,14 @@ def test_describe_change_is_plain_language() -> None:
         ),
     )
     assert oc.describe_change(change) == "Add relation WORKS_AT (Person → Company)"
+
+
+def test_refers_to_type_ignores_case_plural_and_name_formatting() -> None:
+    assert oc.refers_to_type("contracts", ["Contract"])
+    assert oc.refers_to_type("purchase orders", ["PurchaseOrder"])
+    assert oc.refers_to_type("companies", ["Company"])
+    assert oc.refers_to_type("addresses", ["Address"])
+    assert oc.refers_to_type("works at", ["WORKS_AT"])
+    # Real synonyms and unrelated terms are not the type's own name.
+    assert not oc.refers_to_type("clients", ["Customer"])
+    assert not oc.refers_to_type("invoices", ["Contract", "Customer"])

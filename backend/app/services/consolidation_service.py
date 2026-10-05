@@ -174,9 +174,10 @@ def compose_digest(stats: dict) -> str:
             f"{_plural(stats['ontology_changes_applied'], 'change')} learned from conversations."
         )
     if stats.get("ontology_changes_pending"):
+        pending = stats["ontology_changes_pending"]
         lines.append(
-            f"{_plural(stats['ontology_changes_pending'], 'suggested ontology change')} "
-            "await your review."
+            f"{_plural(pending, 'suggested ontology change')} "
+            f"{'awaits' if pending == 1 else 'await'} your review."
         )
     if stats.get("communities_rebuilt"):
         rebuilt = _plural(

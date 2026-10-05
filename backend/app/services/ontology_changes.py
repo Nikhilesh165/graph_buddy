@@ -18,6 +18,8 @@ the rest of the batch.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -116,6 +118,22 @@ def changes_from_bootstrap(proposal: OntologyProposal) -> list[OntologyChange]:
     ]
 
 
+def change_key(change: OntologyChange) -> tuple[str, ...]:
+    """What a change *does*, ignoring wording (rationale, descriptions of
+    new types) -- two suggestions with the same key are the same suggestion,
+    e.g. a second upload re-proposing a rename that's already awaiting
+    review."""
+    key = [change.op, change.target.strip().lower()]
+    if change.property_def is not None:
+        key.append(change.property_def.name.strip().lower())
+    if change.new_name:
+        key.append(change.new_name.strip().lower())
+    if change.op == "extend_relation_endpoints":
+        key.append(",".join(sorted(n.lower() for n in change.source_types)))
+        key.append(",".join(sorted(n.lower() for n in change.target_types)))
+    return tuple(key)
+
+
 def describe_change(change: OntologyChange) -> str:
     """One plain-language line per change, for the Discovery Feed."""
     match change.op:
@@ -156,6 +174,35 @@ class ApplyResult:
     relation_types: list[RelationType]
     applied: list[OntologyChange] = field(default_factory=list)
     skipped: list[SkippedChange] = field(default_factory=list)
+
+
+def _phrase(name: str) -> str:
+    """ "PurchaseOrder" / "PURCHASE_ORDER" / " purchase  order " -> "purchase order"."""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name)
+    return " ".join(spaced.replace("_", " ").lower().split())
+
+
+def _singular_forms(phrase: str) -> set[str]:
+    """Candidate singulars, without a stemmer: "cases" -> {cases, case, cas},
+    "addresses" -> {..., address}, "companies" -> {..., company}. Two
+    phrases name the same thing if their candidate sets intersect."""
+    forms = {phrase}
+    if phrase.endswith("s") and not phrase.endswith("ss"):
+        forms.add(phrase[:-1])
+    if phrase.endswith("es"):
+        forms.add(phrase[:-2])
+    if phrase.endswith("ies"):
+        forms.add(phrase[:-3] + "y")
+    return forms
+
+
+def refers_to_type(term: str, type_names: Iterable[str]) -> bool:
+    """Whether a user's word is just an ontology type's own name -- modulo
+    case, plural, and CamelCase/SNAKE_CASE formatting ("contracts" vs
+    Contract, "purchase orders" vs PurchaseOrder). Used to tell genuine
+    ontology gaps and synonyms apart from the ontology's own vocabulary."""
+    wanted = _singular_forms(_phrase(term))
+    return any(wanted & _singular_forms(_phrase(name)) for name in type_names)
 
 
 def is_valid_type_name(name: str) -> bool:

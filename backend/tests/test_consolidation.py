@@ -157,6 +157,8 @@ def test_failed_gap_mining_is_retried_over_the_same_window(
     failed = client.post("/memory/consolidate").json()
 
     assert failed["status"] == "completed"
+    # A failed step records no partial results (and no high-water mark).
+    assert "turns_reviewed" not in failed["stats"]
     assert failed["stats"]["errors"] == [{"step": "gap mining", "error": "LLM down"}]
     assert "Skipped gap mining: LLM down" in failed["digest"]
     assert client.get("/discovery/feed").json()[0]["title"] == "Memory consolidated (with errors)"
@@ -250,3 +252,17 @@ async def test_periodic_task_with_zero_interval_never_starts() -> None:
     task.start()
     assert not task.running
     await task.stop()
+
+
+def test_digest_wording() -> None:
+    from app.services.consolidation_service import compose_digest
+
+    assert "1 suggested ontology change awaits your review." in compose_digest(
+        {"ontology_changes_pending": 1}
+    )
+    assert "2 suggested ontology changes await your review." in compose_digest(
+        {"ontology_changes_pending": 2}
+    )
+    assert "Rebuilt 1 community summary over the graph." in compose_digest(
+        {"communities_rebuilt": True, "community_count": 1}
+    )

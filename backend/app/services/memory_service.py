@@ -36,6 +36,7 @@ from sqlmodel import Session, select
 from app.models.chat import ChatTurn, TermMapping
 from app.models.conversation import Conversation
 from app.models.memory import OntologyAlias
+from app.services.ontology_changes import refers_to_type
 
 # Embeddings are scanned in-process (single-tenant MVP): cap how many past
 # episodes a recall compares against. docs/MEMORY_AND_DISCOVERY.md §6 covers
@@ -173,7 +174,8 @@ def record_vocabulary(session: Session, mappings: list[TermMapping]) -> None:
     type names get learned."""
     for mapping in mappings:
         term = normalize_term(mapping.term)
-        if not term or term == mapping.maps_to.lower():
+        # "customers" -> Customer isn't vocabulary worth learning, just the name.
+        if not term or refers_to_type(term, [mapping.maps_to]):
             continue
         existing = session.exec(
             select(OntologyAlias).where(

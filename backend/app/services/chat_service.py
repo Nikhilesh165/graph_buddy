@@ -72,7 +72,7 @@ from app.models.conversation import Conversation
 from app.models.ontology import EntityType, RelationType
 from app.services import memory_service, ontology_service
 from app.services.memory_service import MemoryContext
-from app.services.ontology_changes import is_valid_type_name
+from app.services.ontology_changes import is_valid_type_name, refers_to_type
 
 logger = logging.getLogger(__name__)
 
@@ -234,12 +234,9 @@ def ground_plan(
         if target:
             term_mappings.append(TermMapping(term=mapping.term, kind=mapping.kind, maps_to=target))
     # A term the resolver couldn't map but that *is* a type name (modulo
-    # case) isn't a gap.
-    unmapped = [
-        t
-        for t in plan.unmapped_terms
-        if t.strip() and t.strip().lower() not in entities and t.strip().lower() not in relations
-    ]
+    # case/plural) isn't a gap.
+    type_names = [et.name for et in entity_types] + [rt.name for rt in relation_types]
+    unmapped = [t for t in plan.unmapped_terms if t.strip() and not refers_to_type(t, type_names)]
 
     grounded = plan.model_copy(
         update={

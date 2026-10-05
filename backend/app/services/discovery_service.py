@@ -28,7 +28,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core import llm
 from app.core.config import Settings
@@ -47,10 +47,12 @@ from app.services.ontology_changes import (
     AutonomyLevel,
     SkippedChange,
     apply_changes,
+    change_key,
     changes_from_bootstrap,
     describe_change,
     max_risk,
     partition_by_policy,
+    refers_to_type,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,18 @@ def record_change_set(
     # change it depends on, rather than being lost.
     auto_result = apply_changes(entities, relations, auto)
     review_ids = {id(c) for c in review} | {id(s.change) for s in auto_result.skipped}
+    # Don't queue what's already awaiting review: every upload that still
+    # suggests the same rename shouldn't add another copy to the queue.
+    already_pending = {
+        change_key(c)
+        for pending in session.exec(
+            select(OntologyChangeProposal).where(OntologyChangeProposal.status == "pending")
+        ).all()
+        for c in pending.changes_typed()
+    }
     review = [c for c in dry_run.applied if id(c) in review_ids]
+    duplicates = [c for c in review if change_key(c) in already_pending]
+    review = [c for c in review if change_key(c) not in already_pending]
 
     summary = change_set.summary.strip() or f"Ontology changes suggested by {label}"
     evidence = [e.model_dump() for e in change_set.evidence]
@@ -211,7 +224,11 @@ def record_change_set(
         session.add(
             DiscoveryEvent(
                 kind="source_analyzed",
-                title=f"{label}: already covered by the ontology",
+                title=(
+                    f"{label}: nothing new beyond what's awaiting review"
+                    if duplicates
+                    else f"{label}: already covered by the ontology"
+                ),
                 body=change_set.summary.strip() or "No ontology changes were needed.",
                 payload={
                     "source_id": source_id,
@@ -305,14 +322,14 @@ class GapSignals:
 def collect_gap_signals(turns: list[ChatTurn], known_type_names: set[str]) -> GapSignals:
     """Aggregate per-turn resolver output (`ChatTurn.query_plan`) into
     ontology-gap evidence. A term that has since become an ontology type
-    (e.g. discovery already added it) no longer counts as a gap."""
-    known = {normalize_term(n) for n in known_type_names}
+    (e.g. discovery already added it -- "contracts" once Contract exists)
+    no longer counts as a gap."""
     signals = GapSignals()
     for turn in turns:
         plan = turn.query_plan or {}
         for raw in plan.get("unmapped_terms") or []:
             term = normalize_term(str(raw))
-            if not term or term in known or term.replace(" ", "_") in known:
+            if not term or refers_to_type(term, known_type_names):
                 continue
             signals.term_counts[term] += 1
             examples = signals.term_examples.setdefault(term, [])

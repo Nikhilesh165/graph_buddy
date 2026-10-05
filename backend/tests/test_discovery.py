@@ -332,6 +332,10 @@ def test_collect_gap_signals_aggregates_and_skips_known_types() -> None:
     ]
 
     signals = collect_gap_signals(turns, known_type_names={"Customer", "Person"})
+    # Once discovery has added the type, its plural stops counting as a gap.
+    assert collect_gap_signals(turns, known_type_names={"Contract"}).top_terms() == [
+        ("customer", 1)
+    ]
 
     assert signals.top_terms() == [("contracts", 2)]
     assert signals.term_examples["contracts"] == [
@@ -342,3 +346,41 @@ def test_collect_gap_signals_aggregates_and_skips_known_types() -> None:
     rendered = signals.render()
     assert '"contracts" (asked 2 times)' in rendered
     assert "retrieved no facts" in rendered
+
+
+def test_suggestions_already_awaiting_review_are_not_queued_twice(
+    configure: Callable[..., None],
+    client: TestClient,
+    mock_propose_ontology_changes: AsyncMock,
+) -> None:
+    _put_ontology(client)
+    configure(AUTO_DISCOVER_ON_UPLOAD="true", ONTOLOGY_AUTONOMY="autonomous")
+    mock_propose_ontology_changes.return_value = OntologyChangeSet(
+        changes=[OntologyChange(op="rename_entity_type", target="Person", new_name="Employee")]
+    )
+
+    _upload(client, name="a.txt")
+    # A second upload re-suggests the same rename (worded differently).
+    mock_propose_ontology_changes.return_value = OntologyChangeSet(
+        changes=[
+            OntologyChange(
+                op="rename_entity_type", target="person", new_name="Employee", rationale="again"
+            ),
+            OntologyChange(op="add_entity_type", target="Team"),
+        ]
+    )
+    _upload(client, name="b.txt")
+
+    pending = client.get("/discovery/proposals", params={"status": "pending"}).json()
+    assert len(pending) == 1
+    assert "Team" in [et["name"] for et in client.get("/ontology").json()["entity_types"]]
+
+    # A third upload with only the duplicate says so, rather than "covered".
+    mock_propose_ontology_changes.return_value = OntologyChangeSet(
+        changes=[OntologyChange(op="rename_entity_type", target="Person", new_name="Employee")]
+    )
+    _upload(client, name="c.txt")
+    assert len(client.get("/discovery/proposals", params={"status": "pending"}).json()) == 1
+    latest = client.get("/discovery/feed").json()[0]
+    assert latest["kind"] == "source_analyzed"
+    assert "awaiting review" in latest["title"]
