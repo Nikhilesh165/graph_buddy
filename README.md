@@ -30,4 +30,6 @@ The frontend's two status badges (Backend, Graph DB) reflect `GET /health` and `
 
 Run the backend test suite with `cd backend && uv run pytest` (no live Neo4j or API key required — Graphiti and every LLM call are mocked).
 
+[`docs/BUG_AUDIT.md`](docs/BUG_AUDIT.md) records the October 2026 bug audit: each defect found, its fix and how it was verified, plus known issues still open.
+
 Want something to upload right away? [`examples/sample-sources/`](examples/sample-sources) has five example files (PDF/DOCX/CSV/TXT/MD) describing a fictional startup, with the same people, projects, and customers recurring across all five -- good for exercising ontology bootstrap and extraction end to end.
